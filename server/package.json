@@ -1,0 +1,19 @@
+{
+  "name": "@excalidraw-live/server",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@excalidraw-live/shared": "*",
+    "chokidar": "^4.0.3",
+    "fractional-indexing": "^3.2.0",
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.2"
+  }
+}

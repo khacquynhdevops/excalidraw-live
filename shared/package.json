@@ -1,0 +1,25 @@
+{
+  "name": "@excalidraw-live/shared",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./ensureServer": {
+      "types": "./dist/ensureServer.d.ts",
+      "default": "./dist/ensureServer.js"
+    },
+    "./questions": {
+      "types": "./dist/questions.d.ts",
+      "default": "./dist/questions.js"
+    }
+  },
+  "scripts": {
+    "test": "vitest run"
+  }
+}

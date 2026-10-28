@@ -1,0 +1,26 @@
+{
+  "name": "excalidraw-live",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "workspaces": [
+    "shared",
+    "server",
+    "mcp",
+    "web"
+  ],
+  "scripts": {
+    "build": "tsc -b && npm run build -w web && node scripts/bundle.mjs",
+    "test": "npm test --workspaces --if-present",
+    "canvas": "node skills/setup-excalidraw-live-multiagent/runtime/server.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.6.0",
+    "vitest": "^5.0.5"
+  }
+}

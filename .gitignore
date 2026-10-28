@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.mcp.json
+.claude/
+*.log.jsonl
+.DS_Store
+skills/*/state/
+reference-repos/
