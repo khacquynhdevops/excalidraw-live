@@ -3752,7 +3752,9 @@ var DIAGRAM_KINDS = [
   "pipeline",
   "deployment",
   "threat-model",
-  "story-map"
+  "story-map",
+  "network",
+  "health-model"
 ];
 
 // shared/dist/changes.js

@@ -40,7 +40,8 @@ export const DIAGRAM_KINDS = [
   'overview', 'c4-context', 'c4-container', 'sequence',
   'flow', 'erd', 'state', 'wireframe', 'free',
   'journey', 'timeline', 'c4-component', 'test-map',
-  'pipeline', 'deployment', 'threat-model', 'story-map'
+  'pipeline', 'deployment', 'threat-model', 'story-map',
+  'network', 'health-model'
 ] as const;
 
 export type DiagramKind = (typeof DIAGRAM_KINDS)[number];

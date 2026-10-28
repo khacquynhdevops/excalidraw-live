@@ -18,7 +18,7 @@ Read the board only when the user's request is about it.
 ## 1. Start a session
 
 1. `list_diagrams {audience?: <your role>}`.
-2. Pick the diagram with the user, or `create_diagram {name, kind}` when nothing fits. Pick the `kind` from what the user is describing (see Conventions).
+2. Pick the diagram with the user, or `create_diagram {name, kind}` when nothing fits. Pick the `kind` from what the user is describing; use `free` only when no kind fits.
 3. `open_diagram {id, as: <your role>}`. Give the user the URL it returns. Note the mode (writer or read-only) and the `rev`.
 4. If `open_diagram` lists unanswered questions for your role, raise them with the user before anything else.
 
@@ -70,16 +70,7 @@ Diagrams refine each other: `story-map` → `journey`/`overview` → `c4-context
 
 ## Conventions
 
-| kind | Shapes |
-|---|---|
-| `journey`, `flow` | ellipse = start/end, rectangle = step, diamond = decision, arrows left→right |
-| `overview` | impact map: goal → actors → impacts → deliverables as columns left→right, arrows between them |
-| `c4-*` | rectangle = system/container, frame per boundary, arrow label = protocol or intent |
-| `story-map` | activities in a row at the top (backbone), tasks under them, stories below; one horizontal frame per release slice |
-| `sequence` | participants in a row at the top, lines down, numbered arrow labels |
-| `erd` | rectangle per entity with fields as text, arrow label = cardinality |
-| `state` | rounded rectangles, arrows labelled with the event |
-| `threat-model` | dashed frame = trust boundary, arrow = data flow, red text = STRIDE threat |
+`open_diagram` and `create_diagram` return how to draw the board's kind (shapes and layout). Follow it; a `free` board has none.
 
 Colours: blue `#1971c2` is Claude's proposal, red `#e03131` marks a risk or problem, green `#2f9e44` marks something done or agreed. Leave the user's own colours as they are.
 

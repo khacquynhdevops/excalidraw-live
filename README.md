@@ -54,7 +54,7 @@ What each role owns:
 | `po` | `story-map`, `journey`, `overview`, `c4-context`, business `flow`, `wireframe`, `timeline` |
 | `swe` | `c4-container`, `c4-component`, `sequence`, `erd`, `state`, technical `flow` |
 | `tester` | `test-map`, `state`, decision flows |
-| `devops` | `pipeline`, `deployment`, rollback and runbook flows |
+| `devops` | `pipeline`, `deployment`, `network`, `health-model`, rollback and runbook flows |
 | `security` | `threat-model` (data flows with trust boundaries), auth sequences |
 
 Each diagram has exactly one **owner** role, the only one that can write to it. Other roles read it and ask the owner for changes.

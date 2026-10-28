@@ -36677,7 +36677,9 @@ var DIAGRAM_KINDS = [
   "pipeline",
   "deployment",
   "threat-model",
-  "story-map"
+  "story-map",
+  "network",
+  "health-model"
 ];
 
 // shared/dist/ref.js
@@ -37032,6 +37034,31 @@ function checkConsistency(boards, ids) {
   return out.filter((f) => !ids?.length || f.about.some((a) => ids.includes(a))).map((f) => f.text);
 }
 
+// mcp/src/conventions.ts
+var c4 = "rectangle = system/container, frame per boundary, arrow label = protocol or intent";
+var process3 = "ellipse = start/end, rectangle = step, diamond = decision, arrows left\u2192right";
+var CONVENTIONS = {
+  journey: process3,
+  flow: process3,
+  overview: "impact map: goal \u2192 actors \u2192 impacts \u2192 deliverables as columns left\u2192right, arrows between them",
+  "c4-context": c4,
+  "c4-container": c4,
+  "c4-component": c4,
+  "story-map": "activities in a row at the top (backbone), tasks under them, stories below; one horizontal frame per release slice",
+  sequence: "participants in a row at the top, lines down, numbered arrow labels",
+  erd: "rectangle per entity with fields as text, arrow label = cardinality",
+  state: "rounded rectangles, arrows labelled with the event",
+  "threat-model": "ellipse = process, rectangle = external entity, text between two horizontal lines = data store, dashed frame = trust boundary, arrow = data flow, red text = STRIDE threat beside the element",
+  pipeline: "rectangle = stage or job, left\u2192right; diamond = gate or manual approval; frame per environment in promotion order",
+  deployment: "solid frame = deployment node, nested (region \u203A cluster \u203A node); rectangle = container instance named as on `c4-container`; ellipse = infrastructure node (LB, DNS, firewall); arrow label = protocol/port",
+  network: "solid frame = network/subnet/zone, arrow = allowed traffic labelled with port; separate boards for north-south and east-west traffic",
+  "health-model": "critical user flow at the top, services below, infrastructure at the bottom, arrows = depends on; green/amber/red = healthy/degraded/unhealthy"
+};
+function conventionLine(kind) {
+  const c = CONVENTIONS[kind];
+  return c && `${kind} conventions: ${c}`;
+}
+
 // mcp/src/tools.ts
 var ToolError = class extends Error {
 };
@@ -37108,6 +37135,8 @@ function createBoardServer(opts) {
     const lines = [`opened ${id} "${e.name}" as ${as} (${mode}) \xB7 rev ${b.rev} \xB7 ${url2}/d/${encodeURIComponent(id)}`];
     const s = await scene(e);
     lines.push(summarizeScene(s.elements, { rev: s.rev, name: e.name, kind: e.kind, maxLines: 60 }));
+    const how = conventionLine(e.kind);
+    if (how) lines.push(how);
     const st = await request(url2, "GET", `/api/diagrams/${encodeURIComponent(id)}/status?as=${encodeURIComponent(as)}`);
     if (st.unread) lines.push(`${st.unread} changes since ${as} last read (rev ${st.fromRev}\u2192${st.toRev}); get_changes_since shows them.`);
     const inbox = await inboxFor(dir, as);
@@ -37157,7 +37186,9 @@ function createBoardServer(opts) {
     if (!who) throw new ToolError("owner is required (no diagram is open in this session)");
     const url2 = await server();
     const e = await request(url2, "POST", "/api/diagrams", { name, kind, owner: who, audience, refines });
-    return `created ${named(e)} (${e.kind}) owner ${e.owner} \xB7 ${url2}/d/${encodeURIComponent(e.id)}`;
+    const how = conventionLine(e.kind);
+    return `created ${named(e)} (${e.kind}) owner ${e.owner} \xB7 ${url2}/d/${encodeURIComponent(e.id)}${how ? `
+${how}` : ""}`;
   });
   tool("open_diagram", "Bind this session to one diagram as a role. Only the owner role gets the writer lease; other roles read. Returns the URL for the user and a summary of the board.", {
     id: external_exports.string(),

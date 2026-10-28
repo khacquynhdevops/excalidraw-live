@@ -13,6 +13,7 @@ import {
 import { diagramsDir, ensureServer, findServer, stateDir } from '@excalidraw-live/shared/ensureServer';
 import { answerQuestion, askQuestion, inboxFor, markSeen } from '@excalidraw-live/shared/questions';
 import { checkConsistency, linkRef } from './consistency.js';
+import { conventionLine } from './conventions.js';
 
 export interface BoardServerOptions {
   projectDir: string;
@@ -132,6 +133,8 @@ export function createBoardServer(opts: BoardServerOptions) {
     const lines = [`opened ${id} "${e.name}" as ${as} (${mode}) · rev ${b.rev} · ${url}/d/${encodeURIComponent(id)}`];
     const s = await scene(e);
     lines.push(summarizeScene(s.elements, { rev: s.rev, name: e.name, kind: e.kind, maxLines: 60 }));
+    const how = conventionLine(e.kind);
+    if (how) lines.push(how);
     const st = await request(url, 'GET', `/api/diagrams/${encodeURIComponent(id)}/status?as=${encodeURIComponent(as)}`);
     if (st.unread) lines.push(`${st.unread} changes since ${as} last read (rev ${st.fromRev}→${st.toRev}); get_changes_since shows them.`);
 
@@ -195,7 +198,8 @@ export function createBoardServer(opts: BoardServerOptions) {
     if (!who) throw new ToolError('owner is required (no diagram is open in this session)');
     const url = await server();
     const e: DiagramEntry = await request(url, 'POST', '/api/diagrams', { name, kind, owner: who, audience, refines });
-    return `created ${named(e)} (${e.kind}) owner ${e.owner} · ${url}/d/${encodeURIComponent(e.id)}`;
+    const how = conventionLine(e.kind);
+    return `created ${named(e)} (${e.kind}) owner ${e.owner} · ${url}/d/${encodeURIComponent(e.id)}${how ? `\n${how}` : ''}`;
   });
 
   tool('open_diagram', 'Bind this session to one diagram as a role. Only the owner role gets the writer lease; other roles read. Returns the URL for the user and a summary of the board.', {

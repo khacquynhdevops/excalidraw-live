@@ -135,6 +135,8 @@ describe('a bound session', () => {
     const lines = r.text.split('\n');
     expect(lines[0]).toMatch(/^opened d_over "Overview" as po \(writer\) · rev 4 · http:\/\/127\.0\.0\.1:\d+\/d\/d_over$/);
     expect(lines[1]).toBe('board "Overview" (overview) · rev 4 · 1 shape');
+    // The board's kind brings its drawing rules; `free` brings none.
+    expect(r.text).toContain('overview conventions: impact map:');
     expect((await po.call('read_diagram')).text).toMatch(/^board "Overview"/);
     url = (await findServer(dir))!.url;
     expect(JSON.parse(readFileSync(join(dir, '.claude', 'skills', 'setup-excalidraw-live-multiagent', 'state', 'sessions', '111.json'), 'utf8')))
@@ -243,6 +245,12 @@ describe('a bound session', () => {
     expect(seen).toContain(`answer to ${id} from po: "Guests too" · dl://d_over#checkout`);
     expect((await swe.call('open_diagram', { id: 'd_seq', as: 'swe' })).text).not.toContain(id);
     await po2.board.close();
+  });
+
+  it('creates a diagram with the conventions of its kind, none for free', async () => {
+    expect((await po.call('create_diagram', { name: 'Scratch', kind: 'free' })).text).not.toContain('conventions');
+    expect((await po.call('create_diagram', { name: 'API', kind: 'c4-component' })).text)
+      .toMatch(/\nc4-component conventions: rectangle = system\/container/);
   });
 
   it('releases the lease and its session file on close', async () => {
