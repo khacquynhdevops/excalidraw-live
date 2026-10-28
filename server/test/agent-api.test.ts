@@ -40,7 +40,7 @@ const changes = (body: Record<string, unknown>) => call('POST', `/api/diagrams/$
 describe('sessions', () => {
   it('gives the writer lease only to the owner role', async () => {
     expect((await bind(`mcp-${process.pid}`, 'po')).body).toMatchObject({ mode: 'writer', rev: 0 });
-    expect((await bind('mcp-other', 'swe')).body).toMatchObject({ mode: 'reader' });
+    expect((await bind('mcp-other', 'dev')).body).toMatchObject({ mode: 'reader' });
     expect(() => workspace.assertWrite('mcp-other', diagram.id)).toThrow(/read-only/);
   });
 
@@ -59,12 +59,12 @@ describe('sessions', () => {
 describe('unread changes', () => {
   it('counts changes since the last read and clears them once read', async () => {
     await bind(`mcp-${process.pid}`, 'po');
-    expect(await status('po')).toEqual({ unread: 0, fromRev: 0, toRev: 0, name: 'Main' });
+    expect(await status('po')).toEqual({ unread: 0, fromRev: 0, toRev: 0, name: 'Main', owner: 'po' });
 
     store.upsert([el('a')]);
     store.upsert([el('b', { x: 200 })]);
     store.upsert([el('a', { version: 2, x: 40 })]);
-    expect(await status('po')).toEqual({ unread: 2, fromRev: 0, toRev: 3, name: 'Main' });
+    expect(await status('po')).toEqual({ unread: 2, fromRev: 0, toRev: 3, name: 'Main', owner: 'po' });
 
     const read = await changes({ as: 'po' });
     expect(read).toMatchObject({ since: 0, rev: 3, truncated: false, reset: false });
@@ -74,10 +74,10 @@ describe('unread changes', () => {
 
   it("does not count the owner's own agent writes as unread, but readers see them", async () => {
     await bind(`mcp-${process.pid}`, 'po');
-    await bind('mcp-other', 'swe');
+    await bind('mcp-other', 'dev');
     store.upsert([el('a')], 'agent');
     expect((await status('po')).unread).toBe(0);
-    expect((await status('swe')).unread).toBe(1);
+    expect((await status('dev')).unread).toBe(1);
   });
 
   it('leaves the cursor alone when `since` is given, and filters by origin', async () => {
@@ -180,7 +180,7 @@ describe('agent writes over HTTP', () => {
 
   it('refuses a read-only session and leaves the board alone', async () => {
     await bind(`mcp-${process.pid}`, 'po');
-    await bind('mcp-other', 'swe');
+    await bind('mcp-other', 'dev');
     const r = await apply({ session: 'mcp-other', ops: [{ op: 'create', type: 'rectangle' }] });
     expect(r).toEqual({ status: 400, body: { error: `${diagram.id} is read-only for this session` } });
     expect(store.revision).toBe(0);
@@ -200,7 +200,7 @@ describe('agent writes over HTTP', () => {
 
   it('accepts a proposal for the writer, and refuses a read-only session', async () => {
     await bind(`mcp-${process.pid}`, 'po');
-    await bind('mcp-other', 'swe');
+    await bind('mcp-other', 'dev');
     const made = await apply({ session: `mcp-${process.pid}`, ops: [{ op: 'create', type: 'rectangle', id: 'p' }] });
     const accept = (body: Record<string, unknown>) => call('POST', `/api/diagrams/${diagram.id}/accept`, body);
 

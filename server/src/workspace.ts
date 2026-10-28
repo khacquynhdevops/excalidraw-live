@@ -58,8 +58,9 @@ function slug(name: string): string {
 // `.excalidraw` file and, once opened, its own SceneStore.
 //
 // Sessions (one Claude Code session = one role) bind to a single diagram.
-// Only the diagram's owner role may write, and only one session at a time
-// holds that writer lease; everyone else reads.
+// The diagram's owner role writes; another role writes only when it asks to
+// edit (after the user confirmed). One session at a time holds that writer
+// lease; everyone else reads.
 export class Workspace {
   readonly dir: string;
   private entries: DiagramEntry[] = [];
@@ -162,7 +163,7 @@ export class Workspace {
     this.fileListeners.add(fn);
   }
 
-  bind(sessionId: string, diagramId: string, as: string): Binding {
+  bind(sessionId: string, diagramId: string, as: string, edit = false): Binding {
     const entry = this.require(diagramId);
     this.release(sessionId);
     // An MCP session that died without saying so must not keep the lease.
@@ -170,7 +171,7 @@ export class Workspace {
     if (held && !sessionAlive(held)) this.release(held);
     const holder = this.leases.get(diagramId);
     let binding: Binding;
-    if (as === entry.owner && !holder) {
+    if ((as === entry.owner || edit) && !holder) {
       this.leases.set(diagramId, sessionId);
       binding = { diagramId, mode: 'writer', writer: sessionId };
     } else {

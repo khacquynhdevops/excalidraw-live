@@ -3,10 +3,10 @@
 // how much is unread, and `changes` / `wait` hand over the report and move
 // the position forward.
 //
-//   POST   /api/sessions               bind {session, diagramId, as} → {mode, writer, rev}
+//   POST   /api/sessions               bind {session, diagramId, as, edit?} → {mode, writer, rev}
 //   DELETE /api/sessions/:session      release
 //   GET    /api/diagrams/:id/scene     {rev, elements} without tombstones
-//   GET    /api/diagrams/:id/status?as=role     {unread, fromRev, toRev, name}
+//   GET    /api/diagrams/:id/status?as=role     {unread, fromRev, toRev, name, owner}
 //   POST   /api/diagrams/:id/changes  {as, since?, origin?}  → report
 //   POST   /api/diagrams/:id/wait     {as, since?, idleSeconds?, timeoutSeconds?, origin?}
 //   POST   /api/diagrams/:id/apply    {session, ops, frameId?, color?} → {rev, applied, conflicts, frameId?}
@@ -66,7 +66,7 @@ export async function agentApi(workspace: Workspace, rooms: SyncRooms, url: URL,
     if (!session) throw new WorkspaceError('session is required');
     const as = role(b.as);
     const diagramId = String(b.diagramId ?? '');
-    const binding = workspace.bind(session, diagramId, as);
+    const binding = workspace.bind(session, diagramId, as, b.edit === true);
     const store = await workspace.store(diagramId);
     // A role's first bind starts reading from now, not from the board's birth.
     if (workspace.cursor(diagramId, as) === undefined) await workspace.setCursor(diagramId, as, store.revision);
@@ -102,7 +102,7 @@ export async function agentApi(workspace: Workspace, rooms: SyncRooms, url: URL,
     const cursor = workspace.cursor(id, as) ?? store.revision;
     // The owner's own agent wrote those; they are not news to it.
     const w = windowFor(store, cursor, as === entry.owner ? 'human' : 'any');
-    json(res, 200, { unread: foldChanges(w.records).length, fromRev: cursor, toRev: store.revision, name: entry.name });
+    json(res, 200, { unread: foldChanges(w.records).length, fromRev: cursor, toRev: store.revision, name: entry.name, owner: entry.owner });
     return true;
   }
 

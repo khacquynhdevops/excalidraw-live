@@ -55,7 +55,7 @@ export interface DiagramEntry {
   kind: DiagramKind;
   // The one role that may write this diagram, e.g. "po".
   owner: string;
-  // Roles that read it, e.g. ["swe", "tester"].
+  // Roles that read it, e.g. ["dev", "tester"].
   audience: string[];
   // `<diagramId>#<elementId>` of the element this diagram details.
   refines?: string;

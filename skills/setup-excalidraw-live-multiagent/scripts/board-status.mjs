@@ -1,5 +1,5 @@
-// For the status line: the board this Claude session has open, and how many
-// changes its role has not read. Null when there is no open board or no
+// For the status line: the board this Claude session has open, its owner, the
+// role and mode of this session, and how many changes that role has not read. Null when there is no open board or no
 // server; the status line then stays empty.
 import { execFileSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
@@ -32,7 +32,7 @@ export async function boardStatus(projectDir) {
     const { port } = JSON.parse(await readFile(join(state, 'server.json'), 'utf8'));
     const res = await fetch(`http://127.0.0.1:${port}/api/diagrams/${encodeURIComponent(session.diagramId)}/status?as=${encodeURIComponent(session.as)}`, { signal: AbortSignal.timeout(800) });
     if (!res.ok) return null;
-    return { diagramId: session.diagramId, ...(await res.json()) };
+    return { diagramId: session.diagramId, as: session.as, mode: session.mode, ...(await res.json()) };
   } catch {
     return null;
   }

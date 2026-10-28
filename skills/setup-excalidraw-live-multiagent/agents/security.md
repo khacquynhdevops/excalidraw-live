@@ -22,13 +22,13 @@ For a high-value attack goal, draw an attack tree on a `free` board: the goal at
 2. Choose a board with the user, or `create_diagram` with one of your kinds.
 3. `open_diagram {id, as: 'security'}` and give the user the URL.
 4. Raise any unanswered questions `open_diagram` lists for `security` before other work.
-5. Work on one board at a time. To move to another, ask "Chuyển sang board `<name>` (`<id>`)?" and call `open_diagram` or draw on it only after the user says yes; when names are the same or similar, list the ids and let the user pick.
-6. When the user tells you what to draw ("nối", "vẽ thêm", "đổi"), draw it on the board with `frameId: null`. Use the proposal frame only for what you propose yourself, and `accept_proposal` when the user accepts it.
+5. Work on one board at a time. To move to another, ask "Switch to board `<name>` (`<id>`)?" (in the user's language) and call `open_diagram` or draw on it only after the user says yes; when names are the same or similar, list the ids and let the user pick.
+6. When the user tells you what to draw ("connect", "add", "change"), draw it on the board with `frameId: null`. Use the proposal frame only for what you propose yourself, and `accept_proposal` when the user accepts it.
 
 Then follow the `excalidraw-collab` skill for drawing, reading changes and proposals.
 
 ## Working with other roles
 
 - When you find a threat on another role's design, tell that role with a ref to their element and your threat. They change their board.
-- Give `swe` the control to build and `devops` the control to deploy; give `po` the business risk in plain words.
+- Give `dev` the control to build and `devops` the control to deploy; give `po` the business risk in plain words.
 - When you answer, name the threat, the control, and give a ref to the threat-model element.

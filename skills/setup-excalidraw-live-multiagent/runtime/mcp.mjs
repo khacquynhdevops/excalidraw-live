@@ -37124,14 +37124,14 @@ function createBoardServer(opts) {
     if (!binding) throw new ToolError("no diagram is open in this session; call open_diagram {id, as} first");
     return { ...binding, url: await server() };
   }
-  async function open3(id, as) {
+  async function open3(id, as, edit = false) {
     const e = await entry(id);
     const url2 = await server();
-    const b = await bindOn(url2, { diagramId: id, as });
-    binding = { diagramId: id, as };
+    const b = await bindOn(url2, { diagramId: id, as, edit });
+    binding = { diagramId: id, as, edit };
     await mkdir2(join3(sessionFile, ".."), { recursive: true });
-    await writeFile(sessionFile, JSON.stringify({ diagramId: id, as, session: opts.sessionId }) + "\n");
-    const mode = b.mode === "writer" ? "writer" : as === e.owner ? `read-only: ${b.writer ?? "another session"} holds the writer lease` : `read-only: owner is ${e.owner}`;
+    await writeFile(sessionFile, JSON.stringify({ diagramId: id, as, mode: b.mode, session: opts.sessionId }) + "\n");
+    const mode = b.mode === "writer" ? as === e.owner ? "writer" : `writer on ${e.owner}'s board` : as === e.owner || edit ? `read-only: ${b.writer ?? "another session"} holds the writer lease` : `read-only: owner is ${e.owner}. To change it, first ask the user in their language "This board belongs to ${e.owner}, not ${as}. Are you sure you want to edit it?" and only on yes call open_diagram {id, as, edit: true}`;
     const lines = [`opened ${id} "${e.name}" as ${as} (${mode}) \xB7 rev ${b.rev} \xB7 ${url2}/d/${encodeURIComponent(id)}`];
     const s = await scene(e);
     lines.push(summarizeScene(s.elements, { rev: s.rev, name: e.name, kind: e.kind, maxLines: 60 }));
@@ -37190,10 +37190,11 @@ function createBoardServer(opts) {
     return `created ${named(e)} (${e.kind}) owner ${e.owner} \xB7 ${url2}/d/${encodeURIComponent(e.id)}${how ? `
 ${how}` : ""}`;
   });
-  tool("open_diagram", "Bind this session to one diagram as a role. Only the owner role gets the writer lease; other roles read. Returns the URL for the user and a summary of the board.", {
+  tool("open_diagram", "Bind this session to one diagram as a role. The owner role gets the writer lease; other roles read unless they pass edit: true, which only the user's yes to editing another role's board allows. Returns the URL for the user and a summary of the board.", {
     id: external_exports.string(),
-    as: external_exports.string().describe("your role, e.g. po, swe, tester")
-  }, ({ id, as }) => open3(id, as));
+    as: external_exports.string().describe("your role, e.g. po, dev, tester"),
+    edit: external_exports.boolean().optional().describe("write on another role's board; only after the user confirmed")
+  }, ({ id, as, edit }) => open3(id, as, edit));
   tool("read_diagram", "Summarize a diagram, read-only (e.g. another role's board). Accepts an id, a dl:// ref or a board URL; with neither, the diagram open in this session. Works without the canvas server.", {
     id: external_exports.string().optional(),
     ref: external_exports.string().optional().describe("dl://<id>[@rev][#element] or http://\u2026/d/<id>"),

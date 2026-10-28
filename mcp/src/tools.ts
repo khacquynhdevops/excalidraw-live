@@ -33,6 +33,8 @@ class ToolError extends Error {}
 interface Binding {
   diagramId: string;
   as: string;
+  // Asked to write on a board another role owns (the user confirmed).
+  edit?: boolean;
 }
 
 type Text = { content: { type: 'text'; text: string }[]; isError?: boolean };
@@ -118,18 +120,19 @@ export function createBoardServer(opts: BoardServerOptions) {
     return { ...binding, url: await server() };
   }
 
-  async function open(id: string, as: string): Promise<string> {
+  async function open(id: string, as: string, edit = false): Promise<string> {
     const e = await entry(id);
     const url = await server();
-    const b = await bindOn(url, { diagramId: id, as });
-    binding = { diagramId: id, as };
+    const b = await bindOn(url, { diagramId: id, as, edit });
+    binding = { diagramId: id, as, edit };
     await mkdir(join(sessionFile, '..'), { recursive: true });
-    await writeFile(sessionFile, JSON.stringify({ diagramId: id, as, session: opts.sessionId }) + '\n');
+    await writeFile(sessionFile, JSON.stringify({ diagramId: id, as, mode: b.mode, session: opts.sessionId }) + '\n');
 
-    // Another session of the owner role holding the lease is worth naming.
-    const mode = b.mode === 'writer' ? 'writer'
-      : as === e.owner ? `read-only: ${b.writer ?? 'another session'} holds the writer lease`
-      : `read-only: owner is ${e.owner}`;
+    // Another session holding the lease is worth naming. Another role's board
+    // is read-only until the user confirms editing it.
+    const mode = b.mode === 'writer' ? (as === e.owner ? 'writer' : `writer on ${e.owner}'s board`)
+      : as === e.owner || edit ? `read-only: ${b.writer ?? 'another session'} holds the writer lease`
+      : `read-only: owner is ${e.owner}. To change it, first ask the user in their language "This board belongs to ${e.owner}, not ${as}. Are you sure you want to edit it?" and only on yes call open_diagram {id, as, edit: true}`;
     const lines = [`opened ${id} "${e.name}" as ${as} (${mode}) · rev ${b.rev} · ${url}/d/${encodeURIComponent(id)}`];
     const s = await scene(e);
     lines.push(summarizeScene(s.elements, { rev: s.rev, name: e.name, kind: e.kind, maxLines: 60 }));
@@ -202,10 +205,11 @@ export function createBoardServer(opts: BoardServerOptions) {
     return `created ${named(e)} (${e.kind}) owner ${e.owner} · ${url}/d/${encodeURIComponent(e.id)}${how ? `\n${how}` : ''}`;
   });
 
-  tool('open_diagram', 'Bind this session to one diagram as a role. Only the owner role gets the writer lease; other roles read. Returns the URL for the user and a summary of the board.', {
+  tool('open_diagram', "Bind this session to one diagram as a role. The owner role gets the writer lease; other roles read unless they pass edit: true, which only the user's yes to editing another role's board allows. Returns the URL for the user and a summary of the board.", {
     id: z.string(),
-    as: z.string().describe('your role, e.g. po, swe, tester')
-  }, ({ id, as }) => open(id, as));
+    as: z.string().describe('your role, e.g. po, dev, tester'),
+    edit: z.boolean().optional().describe("write on another role's board; only after the user confirmed")
+  }, ({ id, as, edit }) => open(id, as, edit));
 
   tool('read_diagram', "Summarize a diagram, read-only (e.g. another role's board). Accepts an id, a dl:// ref or a board URL; with neither, the diagram open in this session. Works without the canvas server.", {
     id: z.string().optional(),

@@ -5,30 +5,30 @@ description: Draw and think together with the user on a live Excalidraw board (e
 
 # Drawing with the user on excalidraw-live
 
-The board is a shared whiteboard the user draws on in the browser while you work through the `excalidraw-live` MCP tools. The `.excalidraw` files in `docs/diagrams/` are the source of truth and live in git. Each session is bound to one diagram as one role (`po`, `swe`, `tester`, `devops`, `security`). The diagram's owner role holds the **writer lease**; every other role reads.
+The board is a shared whiteboard the user draws on in the browser while you work through the `excalidraw-live` MCP tools. The `.excalidraw` files in `docs/diagrams/` are the source of truth and live in git. Each session is bound to one diagram as one role (`po`, `dev`, `tester`, `devops`, `security`). The diagram's owner role holds the **writer lease**; every other role reads, and writes only after the user confirms editing a board that is not theirs.
 
 ## Token rule: pull, don't poll
 
 Read the board only when the user's request is about it.
 
 - The user sees the unread count in the status line; you do not. When they say they changed the board or ask about it, call `get_changes_since`.
-- Use `wait_for_changes` only when the user asks you to watch the board ("vẽ xong tôi báo", "watch while I draw"). After a `timeout`, ask the user whether to keep watching. Never loop on your own.
+- Use `wait_for_changes` only when the user asks you to watch the board ("watch while I draw", "tell me when I am done"). After a `timeout`, ask the user whether to keep watching. Never loop on your own.
 - `get_changes_since` without `since` marks the changes read. Use it once per question, not as a probe.
 
 ## 1. Start a session
 
 1. `list_diagrams {audience?: <your role>}`.
 2. Pick the diagram with the user, or `create_diagram {name, kind}` when nothing fits. Pick the `kind` from what the user is describing; use `free` only when no kind fits.
-3. `open_diagram {id, as: <your role>}`. Give the user the URL it returns. Note the mode (writer or read-only) and the `rev`.
+3. `open_diagram {id, as: <your role>}`. Give the user the URL it returns. Note the mode (writer or read-only) and the `rev`. To change another role's board, warn the user first ("This board belongs to <owner>, not <you>. Are you sure you want to edit it?") and only on yes call `open_diagram {id, as, edit: true}`.
 4. If `open_diagram` lists unanswered questions for your role, raise them with the user before anything else.
 
 Done when the user has the URL and you know your mode.
 
 ### Switching boards
 
-A session works on one board at a time. When the conversation turns to another board, ask first and wait for a yes:
+A session works on one board at a time. When the conversation turns to another board, ask first, in the user's language, and wait for a yes:
 
-> Chuyển sang board `<name>` (`<id>`)?
+> Switch to board `<name>` (`<id>`)?
 
 - Call `open_diagram` for the new board, and draw or change anything on it, only after the user confirms.
 - If several boards have the same or a similar name, list them with their ids and let the user pick.
@@ -37,14 +37,14 @@ A session works on one board at a time. When the conversation turns to another b
 ## 2. Understand what the user drew
 
 1. `get_changes_since` (or `get_scene_summary` for the whole board, `{frameId}` for one frame).
-2. **Mirror** it back in the user's language: "A calls B through C, and D stores the result". State your assumptions and ask 1–3 sharp questions. Talk business with `po`, technical with `swe`, risk with `security`.
+2. **Mirror** it back in the user's language: "A calls B through C, and D stores the result". State your assumptions and ask 1–3 sharp questions. Talk business with `po`, technical with `dev`, risk with `security`.
 3. Use element ids (`[abc]`) only when you are going to act on them. Use labels when you talk to the user.
 
 ## 3. Propose on the canvas
 
 Everything you draw is blue (`customData.origin='agent'`). Where it lands depends on who asked for it:
 
-- **A command** from the user ("nối A với B", "vẽ thêm X", "đổi Y"): draw it on the board directly with `frameId: null`. The user asked for exactly this, so it is not a proposal.
+- **A command** from the user ("connect A to B", "add X", "change Y"): draw it on the board directly with `frameId: null`. The user asked for exactly this, so it is not a proposal.
 - **Your own proposal** (options, a suggested structure, something the user did not ask for by name): leave `frameId` out. It goes into the "Claude proposal" frame, which the server places in free space; arrows that reach the user's shapes stay outside the frame.
 
 - `apply_changes {diagramId, ops}`. Always pass the id of the board you mean; the call is refused if another board is open. The result starts with `on "<name>" (<id>)`: check it is the board the user expects. Lay the elements out with real coordinates so they don't overlap: read the summary for free space first.
@@ -76,6 +76,6 @@ Colours: blue `#1971c2` is Claude's proposal, red `#e03131` marks a risk or prob
 
 ## When it goes wrong
 
-- `read-only` error: you are not the owner role. Explain this and offer to ask the owner (section 4).
+- `read-only` error: the board belongs to another role. Ask the owner (section 4), or warn the user and, if they confirm, reopen with `edit: true`. If the owner role's own session holds the lease, wait or ask it.
 - `no browser has … open`: give the user the URL again.
 - `unknown diagram`: call `list_diagrams`; ids are stable but names change.

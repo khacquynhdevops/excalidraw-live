@@ -47,8 +47,8 @@ describe('setup-excalidraw-live-multiagent', () => {
     if (s) process.kill(s.pid, 'SIGTERM');
   });
 
-  it('installs everything and starts the server', async () => {
-    const r = await init();
+  it('installs what was chosen and starts the server', async () => {
+    const r = await init('--statusline', '--agents', 'po,dev');
     expect(r.code, r.out).toBe(0);
     expect(r.out).toMatch(/http:\/\/127\.0\.0\.1:\d+/);
 
@@ -56,7 +56,8 @@ describe('setup-excalidraw-live-multiagent', () => {
       other: { command: 'x' },
       'excalidraw-live': { command: 'node', args: ['.claude/skills/setup-excalidraw-live-multiagent/runtime/mcp.mjs'] }
     });
-    for (const role of ['po', 'swe', 'tester', 'devops', 'security']) expect(existsSync(join(dir, '.claude', 'agents', `${role}.md`))).toBe(true);
+    for (const role of ['po', 'dev', 'tester', 'devops', 'security'])
+      expect(existsSync(join(dir, '.claude', 'agents', `${role}.md`))).toBe(role === 'po' || role === 'dev');
     expect(existsSync(join(dir, '.claude', 'skills', 'excalidraw-collab', 'references', 'elements.md'))).toBe(true);
     expect(json('docs/diagrams/diagrams.json')).toEqual([]);
     expect(readFileSync(join(dir, '.gitignore'), 'utf8')).toBe('node_modules/\n.claude/skills/setup-excalidraw-live-multiagent/state/\n*.excalidraw.log.jsonl\n');
@@ -87,14 +88,15 @@ describe('setup-excalidraw-live-multiagent', () => {
     const r = await init('--update');
     expect(r.code, r.out).toBe(0);
     expect(r.out).toMatch(/updated\s+\.claude\/agents\/po\.md/);
-    expect(r.out).toMatch(/unchanged\s+\.claude\/agents\/swe\.md/);
+    expect(r.out).toMatch(/unchanged\s+\.claude\/agents\/dev\.md/);
     expect(r.out).toMatch(/restart/i);
     expect(readFileSync(join(dir, '.claude', 'agents', 'po.md'), 'utf8')).toBe(readFileSync(join(tool, 'skills', 'setup-excalidraw-live-multiagent', 'agents', 'po.md'), 'utf8'));
+    expect(existsSync(join(dir, '.claude', 'agents', 'tester.md'))).toBe(false);
     expect(readFileSync(join(dir, 'docs', 'diagrams', 'diagrams.json'), 'utf8')).toBe(diagrams);
     expect((await findServer(dir))!.pid).toBe(pid);
   }, 30_000);
 
-  it('shows the unread changes on the board this Claude session has open, and stays empty otherwise', async () => {
+  it('shows the board this Claude session has open, whose it is and its unread changes, and stays empty otherwise', async () => {
     const settings = json('.claude/settings.json');
     const script = (cmd: string) => /"([^"]+)"/.exec(cmd)![1].replace(/^\$\{?CLAUDE_PROJECT_DIR(:-\.)?\}?/, dir);
     const status = script(settings.statusLine.command);
@@ -110,8 +112,9 @@ describe('setup-excalidraw-live-multiagent', () => {
     // under the Claude process, which the status line runs under too.
     await fetch(`${url}/api/sessions`, { method: 'POST', body: JSON.stringify({ session: 's', diagramId: id, as: 'po' }) });
     mkdirSync(join(dir, '.claude', 'skills', 'setup-excalidraw-live-multiagent', 'state', 'sessions'), { recursive: true });
-    writeFileSync(join(dir, '.claude', 'skills', 'setup-excalidraw-live-multiagent', 'state', 'sessions', `${process.pid}.json`), JSON.stringify({ diagramId: id, as: 'po', session: 's' }));
-    expect((await run(dir, status, '{}', env)).out).toBe('✏️ Shop: 0 thay đổi chưa đọc');
+    const bind = (as: string, mode: string) => writeFileSync(join(dir, '.claude', 'skills', 'setup-excalidraw-live-multiagent', 'state', 'sessions', `${process.pid}.json`), JSON.stringify({ diagramId: id, as, mode, session: 's' }));
+    bind('po', 'writer');
+    expect((await run(dir, status, '{}', env)).out).toBe('✏️ Shop · po: 0 unread');
 
     const ws = new (await import('ws')).default(`${url.replace('http', 'ws')}/ws/${id}`);
     await new Promise((r) => ws.on('open', r));
@@ -120,7 +123,12 @@ describe('setup-excalidraw-live-multiagent', () => {
     await new Promise((r) => setTimeout(r, 200));
     ws.close();
 
-    expect((await run(dir, status, '{}', env)).out).toBe('✏️ Shop: 1 thay đổi chưa đọc');
+    expect((await run(dir, status, '{}', env)).out).toBe('✏️ Shop · po: 1 unread');
+    // Another role's board: reading, or editing after the user confirmed.
+    bind('dev', 'reader');
+    expect((await run(dir, status, '{}', env)).out).toBe("👀 Shop (po's) · dev read-only: 0 unread");
+    bind('dev', 'writer');
+    expect((await run(dir, status, '{}', env)).out).toBe("⚠️ Shop (po's) · dev editing: 0 unread");
   }, 30_000);
 
   it('stops the server with the last drawing saved', async () => {
@@ -142,6 +150,24 @@ describe('setup-excalidraw-live-multiagent', () => {
 
     const again = await init('--stop');
     expect(again).toEqual({ code: 0, out: 'no canvas server is running for this project\n' });
+  }, 30_000);
+
+  it('without choices installs no agent and no status line, and refuses an unknown role', async () => {
+    const bare = realpathSync(mkdtempSync(join(tmpdir(), 'xl-bare-')));
+    for (const skill of ['setup-excalidraw-live-multiagent', 'excalidraw-collab'])
+      cpSync(join(tool, 'skills', skill), join(bare, '.claude', 'skills', skill), { recursive: true });
+    const script = '.claude/skills/setup-excalidraw-live-multiagent/scripts/setup.mjs';
+
+    const wrong = await run(bare, script, '', {}, ['--agents', 'po,swe']);
+    expect(wrong).toEqual({ code: 1, out: 'unknown role agent: swe (choose from dev, devops, po, security, tester)\n' });
+    expect(existsSync(join(bare, '.mcp.json'))).toBe(false);
+
+    const r = await run(bare, script);
+    expect(r.code, r.out).toBe(0);
+    expect(existsSync(join(bare, '.mcp.json'))).toBe(true);
+    expect(existsSync(join(bare, '.claude', 'agents'))).toBe(false);
+    expect(existsSync(join(bare, '.claude', 'settings.json'))).toBe(false);
+    process.kill((await findServer(bare))!.pid, 'SIGTERM');
   }, 30_000);
 
   it('restarts the server, whether or not one is running', async () => {

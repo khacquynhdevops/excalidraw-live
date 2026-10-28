@@ -2,8 +2,11 @@
 // Set up excalidraw-live in the project in the working directory, then start
 // its canvas server. Safe to run again: it adds what is missing and leaves
 // everything else (including files you edited) as it is.
-//   --update   also overwrite the role agents and skills it installed with the
-//              skill's current copies; docs/diagrams/ is never touched
+//   --agents <list>  also install these role agents (comma list, e.g. po,dev,
+//                    or none); without it no new agent is installed
+//   --statusline     also add the unread-count status line to .claude/settings.json
+//   --update   also overwrite the role agents already installed and the skill
+//              with the skill's current copies; docs/diagrams/ is never touched
 //   --stop     only stop the canvas server (see stop.mjs)
 //   --restart  stop the server, then set up and start it again
 // Everything it needs ships inside this skill (runtime/ holds the bundled
@@ -22,6 +25,9 @@ const project = process.cwd();
 const update = process.argv.includes('--update');
 const stop = process.argv.includes('--stop');
 const restart = process.argv.includes('--restart');
+const statusline = process.argv.includes('--statusline');
+const agentsArg = process.argv[process.argv.indexOf('--agents') + 1];
+const asked = process.argv.includes('--agents') && agentsArg && agentsArg !== 'none' ? agentsArg.split(',').map((a) => a.trim()) : [];
 const mcpEntry = join(skill, 'runtime', 'mcp.mjs');
 const scripts = join(skill, 'scripts');
 // Config written into the project uses paths relative to its root, so the
@@ -43,6 +49,13 @@ for (const need of [mcpEntry, join(skills, 'excalidraw-collab')]) {
   }
 }
 
+const roles = (await readdir(join(skill, 'agents'))).map((f) => f.replace(/\.md$/, '')).sort();
+const unknown = asked.filter((r) => !roles.includes(r));
+if (unknown.length) {
+  console.error(`unknown role agent: ${unknown.join(', ')} (choose from ${roles.join(', ')})`);
+  process.exit(1);
+}
+
 async function readJson(path, fallback) {
   try {
     return JSON.parse(await readFile(path, 'utf8'));
@@ -60,20 +73,24 @@ async function writeJson(path, before, after) {
   note(before === undefined ? 'created' : 'updated', path);
 }
 
+async function copyOne(src, dst) {
+  if (!existsSync(dst)) {
+    await mkdir(dirname(dst), { recursive: true });
+    await copyFile(src, dst);
+    note('created', dst);
+  } else if (!update) note('kept', dst);
+  else if ((await readFile(src)).equals(await readFile(dst))) note('unchanged', dst);
+  else {
+    await copyFile(src, dst);
+    note('updated', dst);
+  }
+}
+
 async function copyFiles(from, to) {
   for (const name of await readdir(from, { withFileTypes: true })) {
     const src = join(from, name.name), dst = join(to, name.name);
     if (name.isDirectory()) await copyFiles(src, dst);
-    else if (!existsSync(dst)) {
-      await mkdir(to, { recursive: true });
-      await copyFile(src, dst);
-      note('created', dst);
-    } else if (!update) note('kept', dst);
-    else if ((await readFile(src)).equals(await readFile(dst))) note('unchanged', dst);
-    else {
-      await copyFile(src, dst);
-      note('updated', dst);
-    }
+    else await copyOne(src, dst);
   }
 }
 
@@ -86,9 +103,15 @@ async function copyFiles(from, to) {
   await writeJson(path, before, after);
 }
 
-// Role agents and skills.
+// Role agents: only the ones asked for, plus (with --update) the ones the
+// project already has. Any session can use the boards without them.
 const claude = join(project, '.claude');
-await copyFiles(join(skill, 'agents'), join(claude, 'agents'));
+{
+  const have = (r) => existsSync(join(claude, 'agents', `${r}.md`));
+  for (const r of roles.filter((r) => asked.includes(r) || (update && have(r))))
+    await copyOne(join(skill, 'agents', `${r}.md`), join(claude, 'agents', `${r}.md`));
+  if (update && have('swe') && !have('dev')) report.push('note      the swe role is now dev: install it with --agents dev and remove .claude/agents/swe.md yourself');
+}
 // `npx skills add` usually installed it already; then it is kept.
 await copyFiles(join(skills, 'excalidraw-collab'), join(claude, 'skills', 'excalidraw-collab'));
 
@@ -119,8 +142,8 @@ await copyFiles(join(skills, 'excalidraw-collab'), join(claude, 'skills', 'excal
 
 // .claude/settings.json: the status line with the unread count, refreshed
 // every 2 s so it moves while the user draws. Nothing goes into Claude's
-// context: Claude reads the board only when asked. A status line the
-// project already has is left alone.
+// context: Claude reads the board only when asked. Added only with
+// --statusline; a status line the project already has is left alone.
 {
   const path = join(claude, 'settings.json');
   const before = await readJson(path, undefined);
@@ -135,9 +158,9 @@ await copyFiles(join(skills, 'excalidraw-collab'), join(claude, 'skills', 'excal
     if (!Object.keys(after.hooks).length) delete after.hooks;
   }
   // Ours is recognised by the script name, so an older absolute path is replaced.
-  if (!after.statusLine || after.statusLine.command?.includes('statusline.mjs')) after.statusLine = { type: 'command', command: status, refreshInterval: 2 };
-  else report.push('note      .claude/settings.json already has a statusLine; kept it');
-  await writeJson(path, before, after);
+  if (after.statusLine?.command?.includes('statusline.mjs') || (statusline && !after.statusLine)) after.statusLine = { type: 'command', command: status, refreshInterval: 2 };
+  else if (statusline) report.push('note      .claude/settings.json already has a statusLine; kept it');
+  if (before || after.statusLine) await writeJson(path, before, after);
 }
 
 const { ensureServer } = await import(join(skill, 'runtime', 'ensure-server.mjs'));
@@ -147,4 +170,4 @@ console.log(`\ncanvas server ${server.started ? 'started' : 'already running'}: 
 if (update && !server.started) {
   console.log('The running server and open Claude sessions still use the old code: run /setup-excalidraw-live-multiagent --restart, and restart the Claude sessions.');
 }
-console.log('Start a role with `claude --agent po` (or swe, tester, devops, security). A session that was already open must be restarted to load the MCP server.');
+console.log('Start Claude again (`claude`, or `claude --agent <role>` for an installed role agent). A session that was already open must be restarted to load the MCP server.');

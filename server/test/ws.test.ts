@@ -211,7 +211,7 @@ describe('diagrams API', () => {
   });
 
   it('creates and renames', async () => {
-    const res = await api('/api/diagrams', { method: 'POST', body: JSON.stringify({ name: 'Flow', kind: 'flow', owner: 'swe', audience: ['po'] }) });
+    const res = await api('/api/diagrams', { method: 'POST', body: JSON.stringify({ name: 'Flow', kind: 'flow', owner: 'dev', audience: ['po'] }) });
     expect(res.status).toBe(201);
     const d = await res.json();
     expect(workspace.get(d.id)).toEqual(d);

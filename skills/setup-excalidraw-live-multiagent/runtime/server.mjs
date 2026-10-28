@@ -6136,14 +6136,14 @@ var Workspace = class _Workspace {
   onFileChange(fn) {
     this.fileListeners.add(fn);
   }
-  bind(sessionId, diagramId, as) {
+  bind(sessionId, diagramId, as, edit = false) {
     const entry = this.require(diagramId);
     this.release(sessionId);
     const held = this.leases.get(diagramId);
     if (held && !sessionAlive(held)) this.release(held);
     const holder = this.leases.get(diagramId);
     let binding;
-    if (as === entry.owner && !holder) {
+    if ((as === entry.owner || edit) && !holder) {
       this.leases.set(diagramId, sessionId);
       binding = { diagramId, mode: "writer", writer: sessionId };
     } else {
@@ -6917,7 +6917,7 @@ async function agentApi(workspace2, rooms, url, req, res) {
     if (!session) throw new WorkspaceError("session is required");
     const as = role(b.as);
     const diagramId = String(b.diagramId ?? "");
-    const binding = workspace2.bind(session, diagramId, as);
+    const binding = workspace2.bind(session, diagramId, as, b.edit === true);
     const store2 = await workspace2.store(diagramId);
     if (workspace2.cursor(diagramId, as) === void 0) await workspace2.setCursor(diagramId, as, store2.revision);
     json(res, 200, { ...binding, rev: store2.revision });
@@ -6947,7 +6947,7 @@ async function agentApi(workspace2, rooms, url, req, res) {
     const as = role(url.searchParams.get("as"));
     const cursor = workspace2.cursor(id, as) ?? store.revision;
     const w = windowFor(store, cursor, as === entry.owner ? "human" : "any");
-    json(res, 200, { unread: foldChanges(w.records).length, fromRev: cursor, toRev: store.revision, name: entry.name });
+    json(res, 200, { unread: foldChanges(w.records).length, fromRev: cursor, toRev: store.revision, name: entry.name, owner: entry.owner });
     return true;
   }
   if (route === "POST changes") {

@@ -26,8 +26,8 @@ function project(): string {
   const diagrams = join(dir, 'docs', 'diagrams');
   mkdirSync(diagrams, { recursive: true });
   const index: DiagramEntry[] = [
-    { id: 'd_over', name: 'Overview', file: 'overview.excalidraw', kind: 'overview', owner: 'po', audience: ['swe'] },
-    { id: 'd_seq', name: 'Checkout sequence', file: 'checkout.excalidraw', kind: 'sequence', owner: 'swe', audience: [], refines: 'd_over#checkout' }
+    { id: 'd_over', name: 'Overview', file: 'overview.excalidraw', kind: 'overview', owner: 'po', audience: ['dev'] },
+    { id: 'd_seq', name: 'Checkout sequence', file: 'checkout.excalidraw', kind: 'sequence', owner: 'dev', audience: [], refines: 'd_over#checkout' }
   ];
   writeFileSync(join(diagrams, 'diagrams.json'), JSON.stringify(index));
   const scene = (elements: SceneEl[]) => JSON.stringify({ type: 'excalidraw', version: 2, elements, appState: {}, files: {} });
@@ -61,10 +61,10 @@ describe('reading without a server', () => {
   it('lists diagrams with their revision, filtered by kind or audience', async () => {
     const all = (await call('list_diagrams')).text.split('\n');
     expect(all).toHaveLength(2);
-    expect(all[0]).toMatch(/^d_over "Overview" \(overview\) owner po, audience swe · rev 4 · updated /);
-    expect(all[1]).toMatch(/^d_seq "Checkout sequence" \(sequence\) owner swe · refines d_over#checkout · rev 0/);
+    expect(all[0]).toMatch(/^d_over "Overview" \(overview\) owner po, audience dev · rev 4 · updated /);
+    expect(all[1]).toMatch(/^d_seq "Checkout sequence" \(sequence\) owner dev · refines d_over#checkout · rev 0/);
     // A role sees the boards it owns and the ones it reads.
-    expect((await call('list_diagrams', { audience: 'swe' })).text.split('\n').map((l) => l.split(' ')[0])).toEqual(['d_over', 'd_seq']);
+    expect((await call('list_diagrams', { audience: 'dev' })).text.split('\n').map((l) => l.split(' ')[0])).toEqual(['d_over', 'd_seq']);
     expect((await call('list_diagrams', { audience: 'po' })).text).toMatch(/^d_over[^\n]*$/);
     expect((await call('list_diagrams', { kind: 'erd' })).text).toBe('no diagrams');
   });
@@ -114,13 +114,13 @@ describe('reading without a server', () => {
 describe('a bound session', () => {
   let dir: string;
   let po: Awaited<ReturnType<typeof connect>>;
-  let swe: Awaited<ReturnType<typeof connect>>;
+  let dev: Awaited<ReturnType<typeof connect>>;
   let url: string;
 
   beforeAll(async () => {
     dir = project();
     po = await connect({ projectDir: dir, sessionId: 'mcp-test-po', claudePid: 111 });
-    swe = await connect({ projectDir: dir, sessionId: 'mcp-test-swe', claudePid: 222 });
+    dev = await connect({ projectDir: dir, sessionId: 'mcp-test-dev', claudePid: 222 });
   }, 30_000);
   afterAll(async () => {
     const s = await findServer(dir);
@@ -140,12 +140,16 @@ describe('a bound session', () => {
     expect((await po.call('read_diagram')).text).toMatch(/^board "Overview"/);
     url = (await findServer(dir))!.url;
     expect(JSON.parse(readFileSync(join(dir, '.claude', 'skills', 'setup-excalidraw-live-multiagent', 'state', 'sessions', '111.json'), 'utf8')))
-      .toEqual({ diagramId: 'd_over', as: 'po', session: 'mcp-test-po' });
+      .toEqual({ diagramId: 'd_over', as: 'po', mode: 'writer', session: 'mcp-test-po' });
   });
 
   it('opens read-only for any other role', async () => {
-    expect((await swe.call('open_diagram', { id: 'd_over', as: 'swe' })).text)
-      .toMatch(/^opened d_over "Overview" as swe \(read-only: owner is po\)/);
+    expect((await dev.call('open_diagram', { id: 'd_over', as: 'dev' })).text)
+      .toMatch(/^opened d_over "Overview" as dev \(read-only: owner is po\. To change it, first ask the user .* call open_diagram \{id, as, edit: true\}\)/);
+    // Confirmed, but the owner's session still holds the lease.
+    expect((await dev.call('open_diagram', { id: 'd_over', as: 'dev', edit: true })).text)
+      .toMatch(/^opened d_over "Overview" as dev \(read-only: mcp-test-po holds the writer lease\)/);
+    await dev.call('open_diagram', { id: 'd_over', as: 'dev' });
   });
 
   it('counts three drawings as unread, and clears them once read', async () => {
@@ -158,12 +162,12 @@ describe('a bound session', () => {
     await new Promise((r) => setTimeout(r, 200));
     ws.close();
 
-    expect(await status('po')).toEqual({ unread: 2, fromRev: 4, toRev: 7, name: 'Overview' });
+    expect(await status('po')).toEqual({ unread: 2, fromRev: 4, toRev: 7, name: 'Overview', owner: 'po' });
     const read = await po.call('get_changes_since');
     expect(read.text.split('\n')[0]).toBe('rev 4→7: 2 elements changed (human 2)');
     expect(await status('po')).toMatchObject({ unread: 0, fromRev: 7, toRev: 7 });
     // The other role has its own read position.
-    expect((await status('swe')).unread).toBe(2);
+    expect((await status('dev')).unread).toBe(2);
   });
 
   it('summarizes the bound board, or one frame of it', async () => {
@@ -203,7 +207,7 @@ describe('a bound session', () => {
     const file = join(dir, 'docs', 'diagrams', 'overview.excalidraw');
     await new Promise((r) => setTimeout(r, 800)); // let the writer's save land
     const before = readFileSync(file, 'utf8');
-    const r = await swe.call('apply_changes', { ops: [{ op: 'delete', id: 'checkout' }] });
+    const r = await dev.call('apply_changes', { ops: [{ op: 'delete', id: 'checkout' }] });
     expect(r).toEqual({ isError: true, text: 'd_over is read-only for this session' });
     await new Promise((r) => setTimeout(r, 800));
     expect(readFileSync(file, 'utf8')).toBe(before);
@@ -211,17 +215,17 @@ describe('a bound session', () => {
   });
 
   it('makes refs to the bound board for agents and people', async () => {
-    expect((await swe.call('make_ref', { elementId: 'checkout' })).text.split('\n')).toEqual([
+    expect((await dev.call('make_ref', { elementId: 'checkout' })).text.split('\n')).toEqual([
       'dl://d_over@8#checkout',
       `${url}/d/d_over?rev=8#checkout`
     ]);
-    expect(await swe.call('make_ref', { elementId: 'nope' })).toMatchObject({ isError: true, text: 'no element [nope] on d_over' });
+    expect(await dev.call('make_ref', { elementId: 'nope' })).toMatchObject({ isError: true, text: 'no element [nope] on d_over' });
   });
 
   it('accepts a proposal: its elements leave the frame in green and the empty frame goes', async () => {
     const before = (await (await fetch(`${url}/api/diagrams/d_over/scene`)).json()).elements as SceneEl[];
     const frameId = before.find((e) => e.id === 'n')!.frameId as string;
-    expect(await swe.call('accept_proposal', { frameId })).toEqual({ isError: true, text: 'd_over is read-only for this session' });
+    expect(await dev.call('accept_proposal', { frameId })).toEqual({ isError: true, text: 'd_over is read-only for this session' });
     expect((await po.call('accept_proposal', { frameId, diagramId: 'd_seq' })).isError).toBe(true);
     expect((await po.call('accept_proposal', { frameId, diagramId: 'd_over' })).text).toBe('on "Overview" (d_over) rev 10 · accepted 1 [n] · frame deleted');
     const after = (await (await fetch(`${url}/api/diagrams/d_over/scene`)).json()).elements as SceneEl[];
@@ -230,20 +234,20 @@ describe('a bound session', () => {
   });
 
   it('leaves a question for a role that is not running, shown when it opens a board', async () => {
-    const q = await swe.call('ask', { ref: 'dl://d_over@8#checkout', toRole: 'po', text: 'Does checkout need login?' });
+    const q = await dev.call('ask', { ref: 'dl://d_over@8#checkout', toRole: 'po', text: 'Does checkout need login?' });
     const id = /^asked po: (q_[0-9a-f]+)/.exec(q.text)![1];
-    expect(await swe.call('ask', { ref: 'dl://d_nope', toRole: 'po', text: 'x' })).toMatchObject({ isError: true, text: 'unknown diagram: d_nope' });
+    expect(await dev.call('ask', { ref: 'dl://d_nope', toRole: 'po', text: 'x' })).toMatchObject({ isError: true, text: 'unknown diagram: d_nope' });
 
     const po2 = await connect({ projectDir: dir, sessionId: 'mcp-test-po3', claudePid: 444 });
     const opened = (await po2.call('open_diagram', { id: 'd_over', as: 'po' })).text;
-    expect(opened).toContain(`question ${id} from swe: "Does checkout need login?" · dl://d_over@8#checkout`);
+    expect(opened).toContain(`question ${id} from dev: "Does checkout need login?" · dl://d_over@8#checkout`);
     expect(await po2.call('answer', { questionId: id, text: 'Guests too', ref: 'dl://d_over#checkout' })).toMatchObject({ isError: false, text: `answered ${id}` });
     expect((await po2.call('answer', { questionId: id, text: 'again' })).isError).toBe(true);
 
     // The asker sees the answer once, the next time it opens a board.
-    const seen = (await swe.call('open_diagram', { id: 'd_seq', as: 'swe' })).text;
+    const seen = (await dev.call('open_diagram', { id: 'd_seq', as: 'dev' })).text;
     expect(seen).toContain(`answer to ${id} from po: "Guests too" · dl://d_over#checkout`);
-    expect((await swe.call('open_diagram', { id: 'd_seq', as: 'swe' })).text).not.toContain(id);
+    expect((await dev.call('open_diagram', { id: 'd_seq', as: 'dev' })).text).not.toContain(id);
     await po2.board.close();
   });
 

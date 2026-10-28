@@ -18,8 +18,8 @@ describe('Workspace', () => {
 
   it('creates a diagram: index entry, stable id, empty scene file', async () => {
     const ws = await Workspace.load({ dir });
-    const d = await ws.create({ name: 'Checkout – sequence', kind: 'sequence', owner: 'swe', audience: ['po'] });
-    expect(d).toMatchObject({ name: 'Checkout – sequence', kind: 'sequence', owner: 'swe', audience: ['po'], file: 'checkout-sequence.excalidraw' });
+    const d = await ws.create({ name: 'Checkout – sequence', kind: 'sequence', owner: 'dev', audience: ['po'] });
+    expect(d).toMatchObject({ name: 'Checkout – sequence', kind: 'sequence', owner: 'dev', audience: ['po'], file: 'checkout-sequence.excalidraw' });
     expect(d.id).toMatch(/^d_[a-z0-9]{6}$/);
     expect(index()).toEqual([d]);
     expect(JSON.parse(readFileSync(join(dir, d.file), 'utf8'))).toMatchObject({ type: 'excalidraw', elements: [] });
@@ -72,9 +72,9 @@ describe('Workspace', () => {
 describe('session binding and writer lease', () => {
   async function setup() {
     const ws = await Workspace.load({ dir });
-    const po = await ws.create({ name: 'Journey', kind: 'journey', owner: 'po', audience: ['swe'] });
-    const swe = await ws.create({ name: 'Containers', kind: 'c4-container', owner: 'swe' });
-    return { ws, po, swe };
+    const po = await ws.create({ name: 'Journey', kind: 'journey', owner: 'po', audience: ['dev'] });
+    const dev = await ws.create({ name: 'Containers', kind: 'c4-container', owner: 'dev' });
+    return { ws, po, dev };
   }
 
   it('the owner role gets the writer lease', async () => {
@@ -85,8 +85,15 @@ describe('session binding and writer lease', () => {
 
   it('other roles are read-only', async () => {
     const { ws, po } = await setup();
-    expect(ws.bind('s2', po.id, 'swe')).toMatchObject({ mode: 'reader' });
+    expect(ws.bind('s2', po.id, 'dev')).toMatchObject({ mode: 'reader' });
     expect(() => ws.assertWrite('s2', po.id)).toThrow(/read-only/);
+  });
+
+  it('another role writes when it asks to edit, while no one else holds the lease', async () => {
+    const { ws, po } = await setup();
+    expect(ws.bind('s2', po.id, 'dev', true)).toMatchObject({ mode: 'writer' });
+    expect(() => ws.assertWrite('s2', po.id)).not.toThrow();
+    expect(ws.bind('s1', po.id, 'po')).toMatchObject({ mode: 'reader', writer: 's2' });
   });
 
   it('only one session holds the lease; it passes on when released', async () => {
@@ -98,16 +105,16 @@ describe('session binding and writer lease', () => {
   });
 
   it('refuses writes to a diagram the session is not bound to', async () => {
-    const { ws, po, swe } = await setup();
+    const { ws, po, dev } = await setup();
     ws.bind('s1', po.id, 'po');
-    expect(() => ws.assertWrite('s1', swe.id)).toThrow(/bound to/);
+    expect(() => ws.assertWrite('s1', dev.id)).toThrow(/bound to/);
     expect(() => ws.assertWrite('nobody', po.id)).toThrow(/not bound/);
   });
 
   it('binding to another diagram gives up the old lease', async () => {
-    const { ws, po, swe } = await setup();
+    const { ws, po, dev } = await setup();
     ws.bind('s1', po.id, 'po');
-    ws.bind('s1', swe.id, 'swe');
+    ws.bind('s1', dev.id, 'dev');
     expect(ws.bind('s2', po.id, 'po')).toMatchObject({ mode: 'writer' });
   });
 

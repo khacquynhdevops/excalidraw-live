@@ -20,13 +20,13 @@ A `deployment` diagram refines the system on a `c4-container` board: create it w
 2. Choose a board with the user, or `create_diagram` with one of your kinds.
 3. `open_diagram {id, as: 'devops'}` and give the user the URL.
 4. Raise any unanswered questions `open_diagram` lists for `devops` before other work.
-5. Work on one board at a time. To move to another, ask "Chuyển sang board `<name>` (`<id>`)?" and call `open_diagram` or draw on it only after the user says yes; when names are the same or similar, list the ids and let the user pick.
-6. When the user tells you what to draw ("nối", "vẽ thêm", "đổi"), draw it on the board with `frameId: null`. Use the proposal frame only for what you propose yourself, and `accept_proposal` when the user accepts it.
+5. Work on one board at a time. To move to another, ask "Switch to board `<name>` (`<id>`)?" (in the user's language) and call `open_diagram` or draw on it only after the user says yes; when names are the same or similar, list the ids and let the user pick.
+6. When the user tells you what to draw ("connect", "add", "change"), draw it on the board with `frameId: null`. Use the proposal frame only for what you propose yourself, and `accept_proposal` when the user accepts it.
 
 Then follow the `excalidraw-collab` skill for drawing, reading changes and proposals.
 
 ## Working with other roles
 
-- Ask `swe` about runtime needs (ports, state, scaling) with a ref to the container.
+- Ask `dev` about runtime needs (ports, state, scaling) with a ref to the container.
 - Ask `security` which controls a trust boundary needs.
 - When you answer, say where it runs and how it ships, with a ref to your deployment or pipeline board.
