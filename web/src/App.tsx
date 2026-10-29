@@ -34,17 +34,41 @@ export default function App({ diagramId }: { diagramId: string }) {
   }, [api, entry]);
 
   return (
-    <Excalidraw
-      excalidrawAPI={setApi}
-      onChange={(_els, appState) => sync.current?.onChange(appState)}
-      renderTopRightUI={() => (
-        <div style={{ fontSize: 12, padding: '6px 10px', whiteSpace: 'nowrap', color: status === 'live' ? '#2b8a3e' : '#c92a2a' }}>
-          <a href="/">all diagrams</a> · {entry ? `${entry.name} · ${entry.id} · ${entry.kind}` : diagramId} · ● {status} · rev {rev}
-        </div>
-      )}
-    />
+    <>
+      <a href="/" title="All diagrams" aria-label="All diagrams" style={homeStyle}>
+        <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 11l9-8 9 8M5 10v10h5v-6h4v6h5V10" />
+        </svg>
+      </a>
+      <div title={entry ? `${entry.name} · ${entry.id} · ${entry.kind}` : diagramId} style={titleStyle}>
+        <div style={{ fontSize: 16, fontWeight: 600, lineHeight: '20px', color: '#1b1b1f', ...ellipsis }}>{entry ? entry.name : diagramId}</div>
+        {entry && <div style={{ fontSize: 12, lineHeight: '16px', ...ellipsis }}>{`${entry.id} · ${entry.kind}`}</div>}
+      </div>
+      <Excalidraw
+        excalidrawAPI={setApi}
+        onChange={(_els, appState) => sync.current?.onChange(appState)}
+        renderTopRightUI={() => (
+          <div style={{ height: 36, lineHeight: '36px', padding: '0 10px', fontFamily: UI_FONT, fontSize: 12, whiteSpace: 'nowrap', color: status === 'live' ? '#2b8a3e' : '#c92a2a' }}>
+            ● {status} · rev {rev}
+          </div>
+        )}
+      />
+    </>
   );
 }
+
+// The home button and title sit outside Excalidraw (it has no top-left slot),
+// so they set their own font and line up with its 36px menu button by hand.
+const UI_FONT = 'Assistant, system-ui, sans-serif';
+const ellipsis = { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } as const;
+const homeStyle = {
+  position: 'fixed', top: 60, left: 16, zIndex: 10, width: 36, height: 36, boxSizing: 'border-box',
+  display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 8, background: '#ececf4', color: '#1b1b1f',
+} as const;
+const titleStyle = {
+  position: 'fixed', top: 16, left: 64, zIndex: 10, minHeight: 36, maxWidth: 'calc(50vw - 360px)', padding: '0 10px',
+  display: 'flex', flexDirection: 'column', justifyContent: 'center', fontFamily: UI_FONT, color: '#495057',
+} as const;
 
 // Keeps one tab in step with the canvas server.
 //
