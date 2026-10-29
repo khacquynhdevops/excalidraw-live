@@ -6,22 +6,28 @@
 // An op is refused (a conflict, nothing of it applied) when an element it
 // touches is being typed in or is selected in a browser, was changed by a
 // person in the last 5s, no longer exists, or is not at `expectedVersion`.
-// New elements go into the "Claude proposal" frame, in Claude's blue, marked
+// New elements go into the "Claude proposal" frame in neutral ink, marked
 // `customData.origin = 'agent'`. The frame sits in free space: a proposal that
 // would cover the person's elements is moved, as one block, to their right.
 // An arrow that reaches an element outside the proposal stays out of the frame.
+//
+// A shape grows to fit its label, and its label is centred on it after every
+// change; arrows bound to a shape that moved or grew are redrawn. The result
+// lists layout problems (overflow, overlap, outside a frame) around what was
+// written, since the agent never sees the board rendered.
 import { randomBytes, randomInt } from 'node:crypto';
 import { generateKeyBetween } from 'fractional-indexing';
-import { alive, type Presence, type SceneEl } from '@excalidraw-live/shared';
+import { alive, bindingId, box, fitLabel, layoutIssues, measureText, type Presence, type SceneEl } from '@excalidraw-live/shared';
 import type { SceneStore } from './store.js';
 import { WorkspaceError } from './workspace.js';
 
-export const AGENT_COLOR = '#1971c2';
+// Neutral ink. Colour carries meaning (the kind's conventions); where a shape
+// came from is in customData.origin and the proposal frame.
+export const AGENT_COLOR = '#343a40';
 // Nunito, Excalidraw's "Normal" font: easier to read than the hand-drawn
 // Excalifont (5) that Excalidraw uses by default.
 export const AGENT_FONT = 6;
 export const PROPOSAL_FRAME = 'Claude proposal';
-export const ACCEPTED_COLOR = '#2f9e44';
 export const RECENT_MS = 5000;
 const FRAME_PAD = 40;
 
@@ -61,6 +67,8 @@ export interface WriteResult {
   frameId?: string;
   // Every element written, as stored.
   elements: SceneEl[];
+  // Layout problems involving what was written.
+  warnings: string[];
 }
 
 const PROTECTED = ['id', 'type', 'version', 'versionNonce', 'updated', 'isDeleted', 'index'];
@@ -77,21 +85,22 @@ type Ref = { id: string; type: string };
 const refs = (el: SceneEl) => (el.boundElements as Ref[] | null | undefined) ?? [];
 const boundTextId = (el: SceneEl) => refs(el).find((r) => r.type === 'text')?.id;
 
-function measure(text: string, fontSize: number) {
-  const lines = text.split('\n');
-  return { width: Math.max(...lines.map((l) => l.length)) * fontSize * 0.6, height: lines.length * fontSize * 1.25 };
+const textOf = (t: SceneEl) => String(t.originalText ?? t.text ?? '');
+
+// `container` grown, keeping its top-left, to fit a label of `text`.
+function fit(container: SceneEl, text: string, fontSize: number): SceneEl {
+  if (LINEAR.has(container.type)) return container;
+  const size = fitLabel(container.type, num(container.width, 0), num(container.height, 0), measureText(text, fontSize));
+  return { ...container, ...size };
 }
 
-function box(el: SceneEl) {
-  const x = num(el.x, 0), y = num(el.y, 0);
-  if (LINEAR.has(el.type)) {
-    const pts = (el.points as [number, number][] | undefined) ?? [[0, 0]];
-    const xs = pts.map((p) => x + p[0]), ys = pts.map((p) => y + p[1]);
-    return { x1: Math.min(...xs), y1: Math.min(...ys), x2: Math.max(...xs), y2: Math.max(...ys) };
-  }
-  return { x1: x, y1: y, x2: x + num(el.width, 0), y2: y + num(el.height, 0) };
+// `t` centred on `container`.
+function centre(t: SceneEl, container: SceneEl): SceneEl {
+  const b = box(container);
+  return { ...t, x: (b.x1 + b.x2) / 2 - num(t.width, 0) / 2, y: (b.y1 + b.y2) / 2 - num(t.height, 0) / 2 };
 }
 
+const sameBox = (p: Box, q: Box) => p.x1 === q.x1 && p.y1 === q.y1 && p.x2 === q.x2 && p.y2 === q.y2;
 const overlaps = (p: Box, q: Box) => p.x1 < q.x2 && q.x1 < p.x2 && p.y1 < q.y2 && q.y1 < p.y2;
 const union = (bs: Box[]): Box => ({
   x1: Math.min(...bs.map((b) => b.x1)), y1: Math.min(...bs.map((b) => b.y1)),
@@ -149,7 +158,7 @@ export function agentWrite(store: SceneStore, ops: unknown, opts: WriteOptions):
       const text = String(props.text ?? '');
       Object.assign(el, {
         text, originalText: text, fontSize: 20, fontFamily: AGENT_FONT, textAlign: 'left', verticalAlign: 'top',
-        containerId: null, autoResize: true, lineHeight: 1.25, ...measure(text, num(props.fontSize, 20))
+        containerId: null, autoResize: true, lineHeight: 1.25, ...measureText(text, num(props.fontSize, 20))
       });
     }
     if (LINEAR.has(type)) {
@@ -171,14 +180,11 @@ export function agentWrite(store: SceneStore, ops: unknown, opts: WriteOptions):
 
   // A text bound to `container`, centred on it.
   function label(container: SceneEl, text: string, style: Record<string, unknown> = {}): SceneEl {
-    const b = box(container);
-    const size = measure(text, num(style.fontSize, 20));
-    const t = element('text', `${container.id}-label`, {
+    const t = centre(element('text', `${container.id}-label`, {
       text, textAlign: 'center', verticalAlign: 'middle', containerId: container.id,
-      frameId: container.frameId ?? null, strokeColor: container.strokeColor, ...style,
-      x: (b.x1 + b.x2) / 2 - size.width / 2, y: (b.y1 + b.y2) / 2 - size.height / 2
-    });
-    if (get(t.id)) t.id = newId();
+      frameId: container.frameId ?? null, strokeColor: container.strokeColor, ...style
+    }), container);
+    if (live(t.id)) t.id = newId();
     return t;
   }
 
@@ -196,7 +202,7 @@ export function agentWrite(store: SceneStore, ops: unknown, opts: WriteOptions):
     return { own, style };
   }
 
-  const bindTo = (target: SceneEl, ref: Ref) => ({ ...target, boundElements: [...refs(target), ref] });
+  const bindTo = (target: SceneEl, ref: Ref) => ({ ...target, boundElements: [...refs(target).filter((r) => r.id !== ref.id), ref] });
 
   // An arrow drawn from edge to edge between the elements it is bound to.
   function route(el: SceneEl, a: SceneEl, b: SceneEl): SceneEl {
@@ -204,6 +210,16 @@ export function agentWrite(store: SceneStore, ops: unknown, opts: WriteOptions):
     const [sx, sy] = edgePoint(a, (ab.x1 + ab.x2) / 2, (ab.y1 + ab.y2) / 2);
     const [ex, ey] = edgePoint(b, (aa.x1 + aa.x2) / 2, (aa.y1 + aa.y2) / 2);
     return { ...el, x: sx, y: sy, width: Math.abs(ex - sx), height: Math.abs(ey - sy), points: [[0, 0], [ex - sx, ey - sy]] };
+  }
+
+  // Redraw an arrow between the elements it is bound to, its label with it.
+  function reroute(e: SceneEl) {
+    const a = live(bindingId(e.startBinding)), b = live(bindingId(e.endBinding));
+    if (!LINEAR.has(e.type) || !a || !b) return;
+    const r = route(e, a, b);
+    next.set(r.id, r);
+    const t = live(boundTextId(r));
+    if (t) next.set(t.id, centre(t, r));
   }
 
   list.forEach((op, i) => {
@@ -214,7 +230,7 @@ export function agentWrite(store: SceneStore, ops: unknown, opts: WriteOptions):
       const { op: _, type, id = newId(), label: text, start, end, ...fields } = op;
       if (typeof type !== 'string' || !type) throw new WorkspaceError(`op ${i}: type is required`);
       const { own: props, style } = splitStyle(type, fields);
-      if (get(id)) return conflict(id, 'exists');
+      if (live(id)) return conflict(id, 'exists');
       const ends = [start, end].filter((e): e is string => typeof e === 'string');
       for (const e of ends) {
         if (!live(e)) return conflict(e, 'missing');
@@ -233,6 +249,7 @@ export function agentWrite(store: SceneStore, ops: unknown, opts: WriteOptions):
         out.push(bindTo(start === end ? out[0] : b, { id, type: 'arrow' }));
       }
       if (typeof text === 'string' && text && CONTAINERS.has(type)) {
+        el = fit(el, text, num(style.fontSize, 20));
         const t = label(el, text, style);
         el = bindTo(el, { id: t.id, type: 'text' });
         out.push(t);
@@ -271,23 +288,31 @@ export function agentWrite(store: SceneStore, ops: unknown, opts: WriteOptions):
     const { own: patch, style } = splitStyle(el.type, fields);
     let updated: SceneEl = { ...el, ...patch };
     const t = live(textId);
-    if (t && (typeof text === 'string' || Object.keys(style).length)) {
-      // Relabel or restyle in place, keeping the label's centre.
-      const s = typeof text === 'string' ? text : String(t.text ?? '');
-      const size = measure(s, num(style.fontSize ?? t.fontSize, 20));
-      next.set(t.id, {
-        ...t, ...style, text: s, originalText: s, ...size,
-        x: num(t.x, 0) + (num(t.width, 0) - size.width) / 2, y: num(t.y, 0) + (num(t.height, 0) - size.height) / 2
-      });
-    } else if (typeof text === 'string') {
-      if (text && CONTAINERS.has(el.type)) {
-        const nt = label(updated, text, style);
-        updated = bindTo(updated, { id: nt.id, type: 'text' });
-        next.set(nt.id, nt);
-        created.push(nt.id);
-      }
+    if (el.type === 'text' && !el.containerId && (typeof patch.text === 'string' || patch.fontSize !== undefined)) {
+      // A free text: what it says is originalText; its box follows.
+      const s = typeof patch.text === 'string' ? patch.text : textOf(el);
+      updated = { ...updated, text: s, originalText: s, ...measureText(s, num(updated.fontSize, 20)) };
+    } else if (t) {
+      // The label follows its shape, which grows to fit it.
+      const s = typeof text === 'string' ? text : textOf(t);
+      const fontSize = num(style.fontSize ?? t.fontSize, 20);
+      updated = fit(updated, s, fontSize);
+      next.set(t.id, centre({ ...t, ...style, text: s, originalText: s, ...measureText(s, fontSize) }, updated));
+    } else if (typeof text === 'string' && text && CONTAINERS.has(el.type)) {
+      updated = fit(updated, text, num(style.fontSize, 20));
+      const nt = label(updated, text, style);
+      updated = bindTo(updated, { id: nt.id, type: 'text' });
+      next.set(nt.id, nt);
+      created.push(nt.id);
     }
     next.set(el.id, updated);
+    // Arrows bound to a shape that moved or grew follow it.
+    if (!LINEAR.has(el.type) && !sameBox(box(el), box(updated))) {
+      for (const r of refs(updated)) {
+        const a = live(r.id);
+        if (r.type === 'arrow' && a && !blocked(a.id)) reroute(a);
+      }
+    }
     applied.push({ op: i, kind: 'update', id: el.id });
   });
 
@@ -350,18 +375,7 @@ export function agentWrite(store: SceneStore, ops: unknown, opts: WriteOptions):
         if (moved.has(id) || (e.containerId && moved.has(e.containerId as string))) next.set(id, { ...e, x: num(e.x, 0) + dx });
       }
       // Arrows made in this call follow the shapes they are bound to.
-      for (const id of created) {
-        const e = next.get(id)!;
-        const a = live((e.startBinding as { elementId?: string } | null)?.elementId), b = live((e.endBinding as { elementId?: string } | null)?.elementId);
-        if (!LINEAR.has(e.type) || !a || !b) continue;
-        const r = route(e, a, b);
-        next.set(id, r);
-        const t = live(boundTextId(r));
-        if (t) {
-          const rb = box(r);
-          next.set(t.id, { ...t, x: (rb.x1 + rb.x2) / 2 - num(t.width, 0) / 2, y: (rb.y1 + rb.y2) / 2 - num(t.height, 0) / 2 });
-        }
-      }
+      for (const id of created) reroute(next.get(id)!);
     }
     const f = element('frame', newId(), { name: PROPOSAL_FRAME, x: fb.x1, y: fb.y1, width: fb.x2 - fb.x1, height: fb.y2 - fb.y1 });
     created.unshift(f.id);
@@ -369,7 +383,7 @@ export function agentWrite(store: SceneStore, ops: unknown, opts: WriteOptions):
     return f;
   }
 
-  if (!next.size) return { rev: store.revision, applied, conflicts, elements: [] };
+  if (!next.size) return { rev: store.revision, applied, conflicts, elements: [], warnings: [] };
 
   // New elements go on top, in the order they were made; existing ones keep
   // their place. Every element written gets a version the browsers will take.
@@ -382,15 +396,14 @@ export function agentWrite(store: SceneStore, ops: unknown, opts: WriteOptions):
     return out;
   });
   const rev = store.upsert(elements, 'agent');
-  return { rev, applied, conflicts, ...(frameId && { frameId }), elements };
+  const warnings = layoutIssues(store.all(), elements.map((e) => e.id));
+  return { rev, applied, conflicts, ...(frameId && { frameId }), elements, warnings };
 }
 
 export interface AcceptOptions {
   frameId: string;
   // Default: everything in the frame.
   elementIds?: string[];
-  // Keep Claude's blue instead of turning accepted elements green.
-  keepColor?: boolean;
   presence: Presence[];
   now?: number;
 }
@@ -403,8 +416,8 @@ export interface AcceptResult {
   elements: SceneEl[];
 }
 
-// The person accepts (part of) a proposal: its elements leave the frame and
-// turn green, and a frame left empty is deleted.
+// The person accepts (part of) a proposal: its elements leave the frame,
+// keeping their colours, and a frame left empty is deleted.
 export function acceptProposal(store: SceneStore, opts: AcceptOptions): AcceptResult {
   const frame = store.get(opts.frameId);
   if (!frame || !alive(frame) || frame.type !== 'frame') throw new WorkspaceError(`[${opts.frameId}] is not a frame on this board`);
@@ -412,7 +425,7 @@ export function acceptProposal(store: SceneStore, opts: AcceptOptions): AcceptRe
   const ids = opts.elementIds ?? inFrame();
   const stray = ids.find((id) => !inFrame().includes(id));
   if (stray) throw new WorkspaceError(`[${stray}] is not in frame [${frame.id}]`);
-  const patch = { frameId: null, ...(!opts.keepColor && { strokeColor: ACCEPTED_COLOR }) };
+  const patch = { frameId: null };
   const write = (ops: AgentOp[]) => agentWrite(store, ops, { presence: opts.presence, now: opts.now, frameId: null });
   const r = ids.length ? write(ids.map((id) => ({ op: 'update', id, patch }))) : { rev: store.revision, applied: [], conflicts: [], elements: [] };
   const result: AcceptResult = { rev: r.rev, accepted: r.applied.map((a) => a.id), conflicts: r.conflicts, frameDeleted: false, elements: r.elements };

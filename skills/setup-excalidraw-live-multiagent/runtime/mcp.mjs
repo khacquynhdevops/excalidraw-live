@@ -36806,6 +36806,133 @@ function summarizeScene(elements, opts) {
   return [...lines.slice(0, max), `\u2026 and ${lines.length - max} more lines`].join("\n");
 }
 
+// shared/dist/layout.js
+var num = (v, d = 0) => typeof v === "number" && Number.isFinite(v) ? v : d;
+var LINEAR = /* @__PURE__ */ new Set(["arrow", "line"]);
+var SHAPES = /* @__PURE__ */ new Set(["rectangle", "ellipse", "diamond", "image", "text"]);
+var TEXT_PADDING = 5;
+function box(el) {
+  const x = num(el.x), y = num(el.y);
+  if (LINEAR.has(el.type)) {
+    const pts = el.points ?? [[0, 0]];
+    const xs = pts.map((p) => x + p[0]), ys = pts.map((p) => y + p[1]);
+    return { x1: Math.min(...xs), y1: Math.min(...ys), x2: Math.max(...xs), y2: Math.max(...ys) };
+  }
+  return { x1: x, y1: y, x2: x + num(el.width), y2: y + num(el.height) };
+}
+var ROOM = { ellipse: Math.SQRT1_2, diamond: 0.5 };
+function labelRoom(type, width, height) {
+  const k = ROOM[type] ?? 1;
+  return { width: width * k - 2 * TEXT_PADDING, height: height * k - 2 * TEXT_PADDING };
+}
+function fitLabel(type, width, height, text) {
+  const k = ROOM[type] ?? 1;
+  return { width: Math.max(width, Math.ceil((text.width + 40) / k)), height: Math.max(height, Math.ceil((text.height + 30) / k)) };
+}
+function crosses(x1, y1, x2, y2, b) {
+  let t0 = 0, t1 = 1;
+  const dx = x2 - x1, dy = y2 - y1;
+  for (const [p, q] of [[-dx, x1 - b.x1], [dx, b.x2 - x1], [-dy, y1 - b.y1], [dy, b.y2 - y1]]) {
+    if (!p) {
+      if (q < 0)
+        return false;
+      continue;
+    }
+    const t = q / p;
+    if (p < 0)
+      t0 = Math.max(t0, t);
+    else
+      t1 = Math.min(t1, t);
+    if (t0 > t1)
+      return false;
+  }
+  return true;
+}
+var overlaps = (p, q) => p.x1 < q.x2 && q.x1 < p.x2 && p.y1 < q.y2 && q.y1 < p.y2;
+var inside = (p, q, slack = 1) => p.x1 >= q.x1 - slack && p.y1 >= q.y1 - slack && p.x2 <= q.x2 + slack && p.y2 <= q.y2 + slack;
+function layoutIssues(elements, ids) {
+  const live = elements.filter(alive);
+  const byId = new Map(live.map((e) => [e.id, e]));
+  const only = ids ? new Set(ids) : void 0;
+  const textOf2 = (t) => String(t.originalText ?? t.text ?? "").split("\n")[0].slice(0, 30);
+  const named = (e) => {
+    const t = e.type === "text" ? e : byId.get((e.boundElements ?? []).find((r) => r.type === "text")?.id ?? "");
+    return t ? `${e.type} "${textOf2(t)}" [${e.id}]` : `${e.type} [${e.id}]`;
+  };
+  const out = [];
+  const add = (about, text) => {
+    if (!only || about.some((id) => only.has(id)))
+      out.push(text);
+  };
+  const shapes = live.filter((e) => SHAPES.has(e.type) && !e.containerId);
+  const frames = live.filter((e) => e.type === "frame");
+  const arrowLabels = [];
+  for (const t of live) {
+    const c = typeof t.containerId === "string" ? byId.get(t.containerId) : void 0;
+    if (t.type !== "text" || !c)
+      continue;
+    const tb = box(t), cb = box(c);
+    if (LINEAR.has(c.type)) {
+      const length = Math.hypot(cb.x2 - cb.x1, cb.y2 - cb.y1);
+      if (tb.x2 - tb.x1 + 20 > length)
+        add([c.id, t.id], `label of ${named(c)} is longer than the arrow: shorten it or move the shapes apart`);
+      const hit = shapes.find((s) => overlaps(tb, box(s)));
+      if (hit)
+        add([c.id, t.id, hit.id], `label of ${named(c)} lies on ${named(hit)}`);
+      const edge = frames.find((f) => overlaps(tb, box(f)) && !inside(tb, box(f), 0));
+      if (edge)
+        add([c.id, t.id, edge.id], `label of ${named(c)} lies on the edge of frame "${String(edge.name ?? edge.id)}"`);
+      for (const o of arrowLabels) {
+        if (overlaps(tb, o.box))
+          add([c.id, o.arrow.id], `labels of ${named(o.arrow)} and ${named(c)} overlap`);
+      }
+      arrowLabels.push({ arrow: c, box: tb });
+      continue;
+    }
+    if (!overlaps(tb, cb)) {
+      add([c.id, t.id], `label of ${named(c)} is outside its shape`);
+      continue;
+    }
+    const room = labelRoom(c.type, cb.x2 - cb.x1, cb.y2 - cb.y1);
+    if (tb.x2 - tb.x1 > room.width + 1 || tb.y2 - tb.y1 > room.height + 1) {
+      const fit = fitLabel(c.type, cb.x2 - cb.x1, cb.y2 - cb.y1, { width: tb.x2 - tb.x1, height: tb.y2 - tb.y1 });
+      add([c.id, t.id], `label of ${named(c)} overflows it: make it ${fit.width}x${fit.height} or shorten the label`);
+    } else if (Math.abs((tb.x1 + tb.x2 - cb.x1 - cb.x2) / 2) > 10 || Math.abs((tb.y1 + tb.y2 - cb.y1 - cb.y2) / 2) > 10) {
+      add([c.id, t.id], `label of ${named(c)} is off its centre: update the shape to re-centre it`);
+    }
+  }
+  for (const a of live.filter((e) => LINEAR.has(e.type))) {
+    const ends = new Set([a.startBinding, a.endBinding].map((b) => b?.elementId));
+    const pts = (a.points ?? []).map(([px, py]) => [num(a.x) + px, num(a.y) + py]);
+    for (const s of shapes) {
+      if (ends.has(s.id) || s.type === "text")
+        continue;
+      const sb = box(s);
+      if (pts.some(([px, py]) => px > sb.x1 && px < sb.x2 && py > sb.y1 && py < sb.y2))
+        continue;
+      const core = { x1: sb.x1 + 2, y1: sb.y1 + 2, x2: sb.x2 - 2, y2: sb.y2 - 2 };
+      if (pts.some((p, i) => i > 0 && crosses(pts[i - 1][0], pts[i - 1][1], p[0], p[1], core))) {
+        add([a.id, s.id], `${named(a)} crosses ${named(s)}: move one of them so the arrow goes around`);
+      }
+    }
+  }
+  for (let i = 0; i < shapes.length; i++) {
+    for (let j = i + 1; j < shapes.length; j++) {
+      const p = box(shapes[i]), q = box(shapes[j]);
+      if (overlaps(p, q) && !inside(p, q) && !inside(q, p))
+        add([shapes[i].id, shapes[j].id], `${named(shapes[i])} overlaps ${named(shapes[j])}`);
+    }
+  }
+  for (const e of live) {
+    const f = typeof e.frameId === "string" ? byId.get(e.frameId) : void 0;
+    if (!f || e.containerId)
+      continue;
+    if (!inside(box(e), box(f)))
+      add([e.id, f.id], `${named(e)} sticks out of frame "${String(f.name ?? f.id)}"`);
+  }
+  return out;
+}
+
 // shared/dist/ensureServer.js
 import { spawn } from "node:child_process";
 import { mkdir, open as open2, readFile, stat, unlink } from "node:fs/promises";
@@ -36953,7 +37080,7 @@ async function markSeen(dir, role, ids) {
 }
 
 // mcp/src/consistency.ts
-var SHAPES = /* @__PURE__ */ new Set(["rectangle", "ellipse", "diamond", "frame"]);
+var SHAPES2 = /* @__PURE__ */ new Set(["rectangle", "ellipse", "diamond", "frame"]);
 var norm = (s) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 function distance(a, b) {
   let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
@@ -37027,7 +37154,7 @@ function checkConsistency(boards, ids) {
     const p = byId.get(pid);
     if (!p) continue;
     for (const el of p.elements.filter(alive)) {
-      if (!SHAPES.has(el.type) || !labelOf(el, lookup(p)) || detailed.has(`${pid}#${el.id}`)) continue;
+      if (!SHAPES2.has(el.type) || !labelOf(el, lookup(p)) || detailed.has(`${pid}#${el.id}`)) continue;
       report(`undetailed: ${pid} ${named(p, el)} (no diagram refines or links it)`, pid);
     }
   }
@@ -37035,28 +37162,124 @@ function checkConsistency(boards, ids) {
 }
 
 // mcp/src/conventions.ts
-var c4 = "rectangle = system/container, frame per boundary, arrow label = protocol or intent";
-var process3 = "ellipse = start/end, rectangle = step, diamond = decision, arrows left\u2192right";
+var PALETTE = {
+  blue: ["#d0ebff", "#1864ab"],
+  green: ["#d3f9d8", "#2b8a3e"],
+  yellow: ["#fff3bf", "#e67700"],
+  violet: ["#e5dbff", "#5f3dc4"],
+  orange: ["#ffe8cc", "#d9480f"],
+  pink: ["#ffdeeb", "#a61e4d"],
+  grey: ["#e9ecef", "#495057"],
+  red: ["#ffe3e3", "#e03131"],
+  white: ["#ffffff", "#343a40"]
+};
+var c4Colours = [
+  ["person", "blue"],
+  ["web/mobile UI", "green"],
+  ["gateway/edge", "yellow"],
+  ["service", "violet"],
+  ["data store", "orange"],
+  ["queue/broker", "pink"],
+  ["external system (dashed)", "grey"]
+];
 var CONVENTIONS = {
-  journey: process3,
-  flow: process3,
-  overview: "impact map: goal \u2192 actors \u2192 impacts \u2192 deliverables as columns left\u2192right, arrows between them",
-  "c4-context": c4,
-  "c4-container": c4,
-  "c4-component": c4,
-  "story-map": "activities in a row at the top (backbone), tasks under them, stories below; one horizontal frame per release slice",
-  sequence: "participants in a row at the top, lines down, numbered arrow labels",
-  erd: "rectangle per entity with fields as text, arrow label = cardinality",
-  state: "rounded rectangles, arrows labelled with the event",
-  "threat-model": "ellipse = process, rectangle = external entity, text between two horizontal lines = data store, dashed frame = trust boundary, arrow = data flow, red text = STRIDE threat beside the element",
-  pipeline: "rectangle = stage or job, left\u2192right; diamond = gate or manual approval; frame per environment in promotion order",
-  deployment: "solid frame = deployment node, nested (region \u203A cluster \u203A node); rectangle = container instance named as on `c4-container`; ellipse = infrastructure node (LB, DNS, firewall); arrow label = protocol/port",
-  network: "solid frame = network/subnet/zone, arrow = allowed traffic labelled with port; separate boards for north-south and east-west traffic",
-  "health-model": "critical user flow at the top, services below, infrastructure at the bottom, arrows = depends on; green/amber/red = healthy/degraded/unhealthy"
+  overview: {
+    notation: "impact mapping (goal \u2192 actors \u2192 impacts \u2192 deliverables)",
+    colours: [["goal", "yellow"], ["actor", "blue"], ["impact", "violet"], ["deliverable", "green"]]
+  },
+  "story-map": {
+    notation: "Jeff Patton user story mapping",
+    house: "one horizontal frame per release slice",
+    colours: [["activity", "orange"], ["task", "yellow"], ["story", "white"]]
+  },
+  journey: {
+    notation: "customer journey mapping",
+    colours: [["action", "white"], ["touchpoint", "blue"], ["pain point", "red"], ["opportunity", "green"]]
+  },
+  flow: {
+    notation: "flowcharts (BPMN-style swimlanes when several actors take part)",
+    house: "one frame per lane",
+    colours: [["start/end", "grey"], ["step", "white"], ["decision", "yellow"], ["error path", "red"]]
+  },
+  "c4-context": {
+    notation: "the C4 model (system context level)",
+    colours: [["person", "blue"], ["system in scope", "violet"], ["external system (dashed)", "grey"]]
+  },
+  "c4-container": {
+    notation: "the C4 model (container level)",
+    house: "a dashed frame is the system boundary",
+    colours: c4Colours,
+    // 2026-10-29, dev session feedback on a c4-container board.
+    avoid: ["external systems far from the container that calls them: the arrow then cuts across other boxes and the reader loses it"]
+  },
+  "c4-component": {
+    notation: "the C4 model (component level)",
+    house: "the frame is the container being detailed",
+    colours: [["component", "violet"], ["other container", "grey"], ["data store", "orange"], ["queue/broker", "pink"], ["external system (dashed)", "grey"]]
+  },
+  sequence: {
+    notation: "UML sequence diagrams",
+    house: "participants coloured as on c4-container",
+    colours: c4Colours
+  },
+  erd: {
+    notation: "entity-relationship modelling with cardinality on the relationships",
+    house: "aggregates grouped in frames",
+    colours: [["aggregate root", "violet"], ["entity", "white"], ["lookup/reference", "grey"]]
+  },
+  state: {
+    notation: "UML state machines",
+    colours: [["initial/final", "grey"], ["state", "white"], ["error state", "red"]]
+  },
+  wireframe: {
+    notation: "low-fidelity wireframing",
+    house: "one frame per screen, arrows between frames for navigation",
+    colours: [["placeholder", "grey"], ["primary action", "blue"], ["note", "yellow"]]
+  },
+  timeline: {
+    notation: "goal-oriented product roadmaps",
+    colours: [["done", "green"], ["planned", "white"], ["goal", "yellow"], ["at risk", "red"]]
+  },
+  "test-map": {
+    notation: "requirements traceability (requirement \u2192 tests, by test level)",
+    house: "one frame per test level",
+    colours: [["requirement", "blue"], ["test", "violet"], ["passing", "green"], ["gap or failing", "red"]]
+  },
+  pipeline: {
+    notation: "CI/CD pipeline diagrams with gates",
+    house: "one frame per environment, in promotion order",
+    colours: [["stage", "white"], ["gate/approval", "yellow"], ["environment frame", "grey"], ["failure path", "red"]]
+  },
+  deployment: {
+    notation: "C4 deployment diagrams",
+    house: "nested frames for deployment nodes; container names as on c4-container",
+    colours: [["container instance", "violet"], ["data store", "orange"], ["infrastructure node", "grey"], ["external (dashed)", "grey"]]
+  },
+  network: {
+    notation: "network topology diagrams",
+    house: "one frame per network/subnet/zone",
+    colours: [["host/service", "white"], ["internet/external (dashed)", "grey"], ["edge/firewall", "yellow"], ["denied traffic (dashed)", "red"]]
+  },
+  "health-model": {
+    notation: "health modelling (user flow \u2192 services \u2192 infrastructure dependencies)",
+    colours: [["healthy", "green"], ["degraded", "yellow"], ["unhealthy", "red"], ["unknown", "grey"]]
+  },
+  "threat-model": {
+    notation: "data-flow diagrams with trust boundaries and STRIDE",
+    house: "a dashed frame is a trust boundary; each threat is a note beside its element with the STRIDE letter",
+    colours: [["process", "violet"], ["external entity", "grey"], ["data store", "orange"], ["threat", "red"]]
+  }
 };
 function conventionLine(kind) {
   const c = CONVENTIONS[kind];
-  return c && `${kind} conventions: ${c}`;
+  if (!c) return void 0;
+  const colours = c.colours.map(([meaning, name]) => `${meaning} ${PALETTE[name][0]}/${PALETTE[name][1]}`).join(", ");
+  return [
+    `${kind}: draw it as an expert in ${c.notation} would, for a reader who has not seen it before.`,
+    c.house && ` Here: ${c.house}.`,
+    ` Fill/stroke: ${colours}. Arrows #868e96, text and frames #343a40.`,
+    c.avoid && ` Avoid ${c.avoid.join("; ")}.`
+  ].filter(Boolean).join("");
 }
 
 // mcp/src/tools.ts
@@ -37116,22 +37339,32 @@ function createBoardServer(opts) {
     if (s.started && binding) await bindOn(s.url, binding);
     return s.url;
   }
-  function bindOn(url2, b) {
-    return request(url2, "POST", "/api/sessions", { session: opts.sessionId, ...b });
+  function bindOn(url2, b, takeover = false) {
+    return request(
+      url2,
+      "POST",
+      "/api/sessions",
+      { session: opts.sessionId, ...b, takeover }
+    );
   }
   async function bound() {
     if (!binding && opts.diagramId && opts.as) await open3(opts.diagramId, opts.as);
     if (!binding) throw new ToolError("no diagram is open in this session; call open_diagram {id, as} first");
     return { ...binding, url: await server() };
   }
-  async function open3(id, as, edit = false) {
+  function holder(b) {
+    if (!b.writer) return "another session";
+    const idle = b.writerIdleSeconds === void 0 ? "" : `, idle ${b.writerIdleSeconds < 60 ? `${b.writerIdleSeconds}s` : `${Math.round(b.writerIdleSeconds / 60)} min`}`;
+    return `${b.writerRole ? `a ${b.writerRole} session` : "a session"} (${b.writer}${idle})`;
+  }
+  async function open3(id, as, edit = false, takeover = false) {
     const e = await entry(id);
     const url2 = await server();
-    const b = await bindOn(url2, { diagramId: id, as, edit });
+    const b = await bindOn(url2, { diagramId: id, as, edit }, takeover);
     binding = { diagramId: id, as, edit };
     await mkdir2(join3(sessionFile, ".."), { recursive: true });
     await writeFile(sessionFile, JSON.stringify({ diagramId: id, as, mode: b.mode, session: opts.sessionId }) + "\n");
-    const mode = b.mode === "writer" ? as === e.owner ? "writer" : `writer on ${e.owner}'s board` : as === e.owner || edit ? `read-only: ${b.writer ?? "another session"} holds the writer lease` : `read-only: owner is ${e.owner}. To change it, first ask the user in their language "This board belongs to ${e.owner}, not ${as}. Are you sure you want to edit it?" and only on yes call open_diagram {id, as, edit: true}`;
+    const mode = b.mode === "writer" ? as === e.owner ? "writer" : `writer on ${e.owner}'s board` : as === e.owner || edit ? `read-only: ${holder(b)} holds the writer lease. Ask the user whether that session is done with this board; only on yes call open_diagram {id, as${edit ? ", edit: true" : ""}, takeover: true}, after which that session only reads` : `read-only: owner is ${e.owner}. To change it, first ask the user in their language "This board belongs to ${e.owner}, not ${as}. Are you sure you want to edit it?" and only on yes call open_diagram {id, as, edit: true}`;
     const lines = [`opened ${id} "${e.name}" as ${as} (${mode}) \xB7 rev ${b.rev} \xB7 ${url2}/d/${encodeURIComponent(id)}`];
     const s = await scene(e);
     lines.push(summarizeScene(s.elements, { rev: s.rev, name: e.name, kind: e.kind, maxLines: 60 }));
@@ -37193,8 +37426,9 @@ ${how}` : ""}`;
   tool("open_diagram", "Bind this session to one diagram as a role. The owner role gets the writer lease; other roles read unless they pass edit: true, which only the user's yes to editing another role's board allows. Returns the URL for the user and a summary of the board.", {
     id: external_exports.string(),
     as: external_exports.string().describe("your role, e.g. po, dev, tester"),
-    edit: external_exports.boolean().optional().describe("write on another role's board; only after the user confirmed")
-  }, ({ id, as, edit }) => open3(id, as, edit));
+    edit: external_exports.boolean().optional().describe("write on another role's board; only after the user confirmed"),
+    takeover: external_exports.boolean().optional().describe("take the writer lease from another session; only after the user confirmed")
+  }, ({ id, as, edit, takeover }) => open3(id, as, edit, takeover));
   tool("read_diagram", "Summarize a diagram, read-only (e.g. another role's board). Accepts an id, a dl:// ref or a board URL; with neither, the diagram open in this session. Works without the canvas server.", {
     id: external_exports.string().optional(),
     ref: external_exports.string().optional().describe("dl://<id>[@rev][#element] or http://\u2026/d/<id>"),
@@ -37238,13 +37472,18 @@ ${how}` : ""}`;
     }
     return lines.join("\n");
   });
-  tool("get_scene_summary", "Summarize the open diagram (or one frame of it): shapes, arrows, notes, frames, groups and the revision. Use when the user asks about the board.", {
+  tool("get_scene_summary", "Summarize the open diagram (or one frame of it): shapes, arrows, notes, frames, groups, the revision and layout issues (labels overflowing or outside their shape, overlaps, elements outside their frame). Use when the user asks about the board, and after a large drawing before you report it done.", {
     frameId: external_exports.string().optional()
   }, async ({ frameId }) => {
     const b = await bound();
     const e = await entry(b.diagramId);
     const s = await scene(e);
-    return summarizeScene(s.elements, { rev: s.rev, name: e.name, kind: e.kind, frameId });
+    const summary = summarizeScene(s.elements, { rev: s.rev, name: e.name, kind: e.kind, frameId });
+    const inFrame = frameId ? s.elements.filter((x) => x.id === frameId || x.frameId === frameId).map((x) => x.id) : void 0;
+    const issues = layoutIssues(s.elements, inFrame);
+    return issues.length ? `${summary}
+layout issues:
+${issues.map((l) => `- ${l}`).join("\n")}` : summary;
   });
   tool("get_changes_since", "What changed on the open diagram. Without `since` it reports everything since this role last read and marks it read. Call it when the user's question is about the board, not on your own.", {
     since: external_exports.number().int().min(0).optional(),
@@ -37284,7 +37523,7 @@ ${how}` : ""}`;
     }
     return { b, e, id: encodeURIComponent(b.diagramId) };
   }
-  tool("apply_changes", `Change the open diagram (writer only). Pass diagramId to make sure it is the board you mean. New elements are blue. When the user asked for this exact change ("connect A and B", "draw X", "rename Y"), pass frameId: null so it lands on the board directly. Leave frameId out only for content you propose on your own (options, a suggested structure): it then goes into a "Claude proposal" frame placed in free space; arrows that reach the user's shapes stay outside it. Elements the user is editing, has selected or changed in the last 5s are not touched; they come back as conflicts: read again, then retry or ask.`, {
+  tool("apply_changes", `Change the open diagram (writer only). Pass diagramId to make sure it is the board you mean. Colour new elements by meaning (see the kind conventions); the default stroke is neutral. When the user asked for this exact change ("connect A and B", "draw X", "rename Y"), pass frameId: null so it lands on the board directly. Leave frameId out only for content you propose on your own (options, a suggested structure): it then goes into a "Claude proposal" frame placed in free space; arrows that reach the user's shapes stay outside it. Elements the user is editing, has selected or changed in the last 5s are not touched; they come back as conflicts: read again, then retry or ask.`, {
     ops: external_exports.array(external_exports.discriminatedUnion("op", [
       external_exports.object({
         op: external_exports.literal("create"),
@@ -37304,7 +37543,7 @@ ${how}` : ""}`;
     ])).min(1),
     diagramId: external_exports.string().optional().describe("the board you mean to change; refused if another board is open"),
     frameId: external_exports.string().nullable().optional(),
-    color: external_exports.string().optional()
+    color: external_exports.string().optional().describe("default stroke for this call; neutral #343a40 when left out")
   }, async ({ ops, diagramId, frameId, color }) => {
     const { b, e, id } = await writeTarget(diagramId);
     const r = await request(b.url, "POST", `/api/diagrams/${id}/apply`, { session: opts.sessionId, ops, frameId, color });
@@ -37315,16 +37554,16 @@ ${how}` : ""}`;
     for (const c of r.conflicts) {
       lines.push(`conflict op ${c.op} [${c.id}]: ${why[c.reason] ?? c.reason}${c.version !== void 0 ? ` (now v${c.version})` : ""}`);
     }
+    for (const w of r.warnings ?? []) lines.push(`layout: ${w}`);
     return lines.join("\n");
   });
-  tool("accept_proposal", "When the user accepts a proposal (all of it, or the elements they name): its elements leave the frame and turn green, unless keepColor; a frame left empty is deleted. Elements the user is busy with come back as conflicts.", {
+  tool("accept_proposal", "When the user accepts a proposal (all of it, or the elements they name): its elements leave the frame with their colours; a frame left empty is deleted. Elements the user is busy with come back as conflicts.", {
     frameId: external_exports.string().describe("the proposal frame"),
     elementIds: external_exports.array(external_exports.string()).optional().describe("only these elements of the frame; default all"),
-    keepColor: external_exports.boolean().optional().describe("keep the blue, when the user asks to"),
     diagramId: external_exports.string().optional().describe("the board you mean to change; refused if another board is open")
-  }, async ({ frameId, elementIds, keepColor, diagramId }) => {
+  }, async ({ frameId, elementIds, diagramId }) => {
     const { b, e, id } = await writeTarget(diagramId);
-    const r = await request(b.url, "POST", `/api/diagrams/${id}/accept`, { session: opts.sessionId, frameId, elementIds, keepColor });
+    const r = await request(b.url, "POST", `/api/diagrams/${id}/accept`, { session: opts.sessionId, frameId, elementIds });
     const lines = [`on "${e.name}" (${e.id}) rev ${r.rev} \xB7 accepted ${r.accepted.length}${r.accepted.length ? ` [${r.accepted.join("] [")}]` : ""} \xB7 frame ${r.frameDeleted ? "deleted" : "kept"}`];
     for (const c of r.conflicts) {
       lines.push(`conflict [${c.id}]: ${why[c.reason] ?? c.reason}${c.version !== void 0 ? ` (now v${c.version})` : ""}`);

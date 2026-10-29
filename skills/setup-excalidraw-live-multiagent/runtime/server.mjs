@@ -376,26 +376,26 @@ var require_permessage_deflate = __commonJS({
             value = value[0];
             if (key === "client_max_window_bits") {
               if (value !== true) {
-                const num2 = +value;
-                if (!Number.isInteger(num2) || num2 < 8 || num2 > 15) {
+                const num3 = +value;
+                if (!Number.isInteger(num3) || num3 < 8 || num3 > 15) {
                   throw new TypeError(
                     `Invalid value for parameter "${key}": ${value}`
                   );
                 }
-                value = num2;
+                value = num3;
               } else if (!this._isServer) {
                 throw new TypeError(
                   `Invalid value for parameter "${key}": ${value}`
                 );
               }
             } else if (key === "server_max_window_bits") {
-              const num2 = +value;
-              if (!Number.isInteger(num2) || num2 < 8 || num2 > 15) {
+              const num3 = +value;
+              if (!Number.isInteger(num3) || num3 < 8 || num3 > 15) {
                 throw new TypeError(
                   `Invalid value for parameter "${key}": ${value}`
                 );
               }
-              value = num2;
+              value = num3;
             } else if (key === "client_no_context_takeover" || key === "server_no_context_takeover") {
               if (value !== true) {
                 throw new TypeError(
@@ -1109,8 +1109,8 @@ var require_receiver = __commonJS({
           return;
         }
         const buf = this.consume(8);
-        const num2 = buf.readUInt32BE(0);
-        if (num2 > Math.pow(2, 53 - 32) - 1) {
+        const num3 = buf.readUInt32BE(0);
+        if (num3 > Math.pow(2, 53 - 32) - 1) {
           const error = this.createError(
             RangeError,
             "Unsupported WebSocket frame: payload length > 2^53 - 1",
@@ -1121,7 +1121,7 @@ var require_receiver = __commonJS({
           cb(error);
           return;
         }
-        this._payloadLength = num2 * Math.pow(2, 32) + buf.readUInt32BE(4);
+        this._payloadLength = num3 * Math.pow(2, 32) + buf.readUInt32BE(4);
         this.haveLength(cb);
       }
       /**
@@ -3999,6 +3999,137 @@ function formatReport(w, elements, maxLines = 50) {
   return [...warnings, header, ...lines].join("\n");
 }
 
+// shared/dist/layout.js
+var num = (v, d = 0) => typeof v === "number" && Number.isFinite(v) ? v : d;
+var LINEAR = /* @__PURE__ */ new Set(["arrow", "line"]);
+var SHAPES = /* @__PURE__ */ new Set(["rectangle", "ellipse", "diamond", "image", "text"]);
+var TEXT_PADDING = 5;
+function box(el) {
+  const x = num(el.x), y = num(el.y);
+  if (LINEAR.has(el.type)) {
+    const pts = el.points ?? [[0, 0]];
+    const xs = pts.map((p) => x + p[0]), ys = pts.map((p) => y + p[1]);
+    return { x1: Math.min(...xs), y1: Math.min(...ys), x2: Math.max(...xs), y2: Math.max(...ys) };
+  }
+  return { x1: x, y1: y, x2: x + num(el.width), y2: y + num(el.height) };
+}
+function measureText(text, fontSize) {
+  const lines = text.split("\n");
+  return { width: Math.max(...lines.map((l) => l.length)) * fontSize * 0.6, height: lines.length * fontSize * 1.25 };
+}
+var ROOM = { ellipse: Math.SQRT1_2, diamond: 0.5 };
+function labelRoom(type, width, height) {
+  const k = ROOM[type] ?? 1;
+  return { width: width * k - 2 * TEXT_PADDING, height: height * k - 2 * TEXT_PADDING };
+}
+function fitLabel(type, width, height, text) {
+  const k = ROOM[type] ?? 1;
+  return { width: Math.max(width, Math.ceil((text.width + 40) / k)), height: Math.max(height, Math.ceil((text.height + 30) / k)) };
+}
+function crosses(x1, y1, x2, y2, b) {
+  let t0 = 0, t1 = 1;
+  const dx = x2 - x1, dy = y2 - y1;
+  for (const [p, q] of [[-dx, x1 - b.x1], [dx, b.x2 - x1], [-dy, y1 - b.y1], [dy, b.y2 - y1]]) {
+    if (!p) {
+      if (q < 0)
+        return false;
+      continue;
+    }
+    const t = q / p;
+    if (p < 0)
+      t0 = Math.max(t0, t);
+    else
+      t1 = Math.min(t1, t);
+    if (t0 > t1)
+      return false;
+  }
+  return true;
+}
+var overlaps = (p, q) => p.x1 < q.x2 && q.x1 < p.x2 && p.y1 < q.y2 && q.y1 < p.y2;
+var inside = (p, q, slack = 1) => p.x1 >= q.x1 - slack && p.y1 >= q.y1 - slack && p.x2 <= q.x2 + slack && p.y2 <= q.y2 + slack;
+function layoutIssues(elements, ids) {
+  const live = elements.filter(alive);
+  const byId = new Map(live.map((e) => [e.id, e]));
+  const only = ids ? new Set(ids) : void 0;
+  const textOf3 = (t) => String(t.originalText ?? t.text ?? "").split("\n")[0].slice(0, 30);
+  const named = (e) => {
+    const t = e.type === "text" ? e : byId.get((e.boundElements ?? []).find((r) => r.type === "text")?.id ?? "");
+    return t ? `${e.type} "${textOf3(t)}" [${e.id}]` : `${e.type} [${e.id}]`;
+  };
+  const out = [];
+  const add = (about, text) => {
+    if (!only || about.some((id) => only.has(id)))
+      out.push(text);
+  };
+  const shapes = live.filter((e) => SHAPES.has(e.type) && !e.containerId);
+  const frames = live.filter((e) => e.type === "frame");
+  const arrowLabels = [];
+  for (const t of live) {
+    const c = typeof t.containerId === "string" ? byId.get(t.containerId) : void 0;
+    if (t.type !== "text" || !c)
+      continue;
+    const tb = box(t), cb = box(c);
+    if (LINEAR.has(c.type)) {
+      const length = Math.hypot(cb.x2 - cb.x1, cb.y2 - cb.y1);
+      if (tb.x2 - tb.x1 + 20 > length)
+        add([c.id, t.id], `label of ${named(c)} is longer than the arrow: shorten it or move the shapes apart`);
+      const hit = shapes.find((s) => overlaps(tb, box(s)));
+      if (hit)
+        add([c.id, t.id, hit.id], `label of ${named(c)} lies on ${named(hit)}`);
+      const edge = frames.find((f) => overlaps(tb, box(f)) && !inside(tb, box(f), 0));
+      if (edge)
+        add([c.id, t.id, edge.id], `label of ${named(c)} lies on the edge of frame "${String(edge.name ?? edge.id)}"`);
+      for (const o of arrowLabels) {
+        if (overlaps(tb, o.box))
+          add([c.id, o.arrow.id], `labels of ${named(o.arrow)} and ${named(c)} overlap`);
+      }
+      arrowLabels.push({ arrow: c, box: tb });
+      continue;
+    }
+    if (!overlaps(tb, cb)) {
+      add([c.id, t.id], `label of ${named(c)} is outside its shape`);
+      continue;
+    }
+    const room = labelRoom(c.type, cb.x2 - cb.x1, cb.y2 - cb.y1);
+    if (tb.x2 - tb.x1 > room.width + 1 || tb.y2 - tb.y1 > room.height + 1) {
+      const fit2 = fitLabel(c.type, cb.x2 - cb.x1, cb.y2 - cb.y1, { width: tb.x2 - tb.x1, height: tb.y2 - tb.y1 });
+      add([c.id, t.id], `label of ${named(c)} overflows it: make it ${fit2.width}x${fit2.height} or shorten the label`);
+    } else if (Math.abs((tb.x1 + tb.x2 - cb.x1 - cb.x2) / 2) > 10 || Math.abs((tb.y1 + tb.y2 - cb.y1 - cb.y2) / 2) > 10) {
+      add([c.id, t.id], `label of ${named(c)} is off its centre: update the shape to re-centre it`);
+    }
+  }
+  for (const a of live.filter((e) => LINEAR.has(e.type))) {
+    const ends = new Set([a.startBinding, a.endBinding].map((b) => b?.elementId));
+    const pts = (a.points ?? []).map(([px, py]) => [num(a.x) + px, num(a.y) + py]);
+    for (const s of shapes) {
+      if (ends.has(s.id) || s.type === "text")
+        continue;
+      const sb = box(s);
+      if (pts.some(([px, py]) => px > sb.x1 && px < sb.x2 && py > sb.y1 && py < sb.y2))
+        continue;
+      const core = { x1: sb.x1 + 2, y1: sb.y1 + 2, x2: sb.x2 - 2, y2: sb.y2 - 2 };
+      if (pts.some((p, i) => i > 0 && crosses(pts[i - 1][0], pts[i - 1][1], p[0], p[1], core))) {
+        add([a.id, s.id], `${named(a)} crosses ${named(s)}: move one of them so the arrow goes around`);
+      }
+    }
+  }
+  for (let i = 0; i < shapes.length; i++) {
+    for (let j = i + 1; j < shapes.length; j++) {
+      const p = box(shapes[i]), q = box(shapes[j]);
+      if (overlaps(p, q) && !inside(p, q) && !inside(q, p))
+        add([shapes[i].id, shapes[j].id], `${named(shapes[i])} overlaps ${named(shapes[j])}`);
+    }
+  }
+  for (const e of live) {
+    const f = typeof e.frameId === "string" ? byId.get(e.frameId) : void 0;
+    if (!f || e.containerId)
+      continue;
+    if (!inside(box(e), box(f)))
+      add([e.id, f.id], `${named(e)} sticks out of frame "${String(f.name ?? f.id)}"`);
+  }
+  return out;
+}
+
 // server/src/file-io.ts
 import { createHash } from "node:crypto";
 import { mkdir, open, readFile, rename, unlink } from "node:fs/promises";
@@ -6136,20 +6267,29 @@ var Workspace = class _Workspace {
   onFileChange(fn) {
     this.fileListeners.add(fn);
   }
-  bind(sessionId, diagramId, as, edit = false) {
+  bind(sessionId, diagramId, as, edit = false, takeover = false) {
     const entry = this.require(diagramId);
     this.release(sessionId);
     const held = this.leases.get(diagramId);
     if (held && !sessionAlive(held)) this.release(held);
     const holder = this.leases.get(diagramId);
+    const now = this.opts.now?.() ?? Date.now();
     let binding;
-    if ((as === entry.owner || edit) && !holder) {
+    if ((as === entry.owner || edit) && (!holder || takeover)) {
+      const old = holder ? this.sessions.get(holder) : void 0;
+      if (old) this.sessions.set(holder, { ...old, mode: "reader", writer: sessionId });
       this.leases.set(diagramId, sessionId);
       binding = { diagramId, mode: "writer", writer: sessionId };
     } else {
-      binding = { diagramId, mode: "reader", writer: holder };
+      const h = holder ? this.sessions.get(holder) : void 0;
+      binding = {
+        diagramId,
+        mode: "reader",
+        writer: holder,
+        ...h && { writerRole: h.as, writerIdleSeconds: Math.round((now - h.active) / 1e3) }
+      };
     }
-    this.sessions.set(sessionId, binding);
+    this.sessions.set(sessionId, { ...binding, as, active: now });
     return binding;
   }
   release(sessionId) {
@@ -6163,6 +6303,7 @@ var Workspace = class _Workspace {
     if (!b) throw new WorkspaceError(`session ${sessionId} is not bound to a diagram`);
     if (b.diagramId !== diagramId) throw new WorkspaceError(`session is bound to ${b.diagramId}, not ${diagramId}`);
     if (this.leases.get(diagramId) !== sessionId) throw new WorkspaceError(`${diagramId} is read-only for this session`);
+    b.active = this.opts.now?.() ?? Date.now();
   }
   // Last revision `role` has read on a diagram; undefined before its first bind.
   cursor(diagramId, role2) {
@@ -6540,35 +6681,32 @@ function generateKeyBetween(a, b, digits = BASE_62_DIGITS) {
 }
 
 // server/src/agent-write.ts
-var AGENT_COLOR = "#1971c2";
+var AGENT_COLOR = "#343a40";
 var AGENT_FONT = 6;
 var PROPOSAL_FRAME = "Claude proposal";
-var ACCEPTED_COLOR = "#2f9e44";
 var RECENT_MS = 5e3;
 var FRAME_PAD = 40;
 var PROTECTED = ["id", "type", "version", "versionNonce", "updated", "isDeleted", "index"];
 var CONTAINERS = /* @__PURE__ */ new Set(["rectangle", "ellipse", "diamond", "arrow"]);
-var LINEAR = /* @__PURE__ */ new Set(["arrow", "line"]);
+var LINEAR2 = /* @__PURE__ */ new Set(["arrow", "line"]);
 var LABEL_STYLE = ["fontFamily", "fontSize", "strokeColor", "frameId"];
 var SHARED_STYLE = /* @__PURE__ */ new Set(["strokeColor", "frameId"]);
 var newId = () => randomBytes2(15).toString("base64url");
-var num = (v, d) => typeof v === "number" && Number.isFinite(v) ? v : d;
+var num2 = (v, d) => typeof v === "number" && Number.isFinite(v) ? v : d;
 var refs = (el) => el.boundElements ?? [];
 var boundTextId = (el) => refs(el).find((r) => r.type === "text")?.id;
-function measure(text, fontSize) {
-  const lines = text.split("\n");
-  return { width: Math.max(...lines.map((l) => l.length)) * fontSize * 0.6, height: lines.length * fontSize * 1.25 };
+var textOf2 = (t) => String(t.originalText ?? t.text ?? "");
+function fit(container, text, fontSize) {
+  if (LINEAR2.has(container.type)) return container;
+  const size = fitLabel(container.type, num2(container.width, 0), num2(container.height, 0), measureText(text, fontSize));
+  return { ...container, ...size };
 }
-function box(el) {
-  const x = num(el.x, 0), y = num(el.y, 0);
-  if (LINEAR.has(el.type)) {
-    const pts = el.points ?? [[0, 0]];
-    const xs = pts.map((p) => x + p[0]), ys = pts.map((p) => y + p[1]);
-    return { x1: Math.min(...xs), y1: Math.min(...ys), x2: Math.max(...xs), y2: Math.max(...ys) };
-  }
-  return { x1: x, y1: y, x2: x + num(el.width, 0), y2: y + num(el.height, 0) };
+function centre(t, container) {
+  const b = box(container);
+  return { ...t, x: (b.x1 + b.x2) / 2 - num2(t.width, 0) / 2, y: (b.y1 + b.y2) / 2 - num2(t.height, 0) / 2 };
 }
-var overlaps = (p, q) => p.x1 < q.x2 && q.x1 < p.x2 && p.y1 < q.y2 && q.y1 < p.y2;
+var sameBox = (p, q) => p.x1 === q.x1 && p.y1 === q.y1 && p.x2 === q.x2 && p.y2 === q.y2;
+var overlaps2 = (p, q) => p.x1 < q.x2 && q.x1 < p.x2 && p.y1 < q.y2 && q.y1 < p.y2;
 var union = (bs) => ({
   x1: Math.min(...bs.map((b) => b.x1)),
   y1: Math.min(...bs.map((b) => b.y1)),
@@ -6646,12 +6784,12 @@ function agentWrite(store, ops, opts) {
         containerId: null,
         autoResize: true,
         lineHeight: 1.25,
-        ...measure(text, num(props.fontSize, 20))
+        ...measureText(text, num2(props.fontSize, 20))
       });
     }
-    if (LINEAR.has(type)) {
+    if (LINEAR2.has(type)) {
       Object.assign(el, {
-        points: [[0, 0], [num(props.width, 160), num(props.height, 0)]],
+        points: [[0, 0], [num2(props.width, 160), num2(props.height, 0)]],
         lastCommittedPoint: null,
         startBinding: null,
         endBinding: null,
@@ -6663,27 +6801,23 @@ function agentWrite(store, ops, opts) {
     if (type === "frame") Object.assign(el, { name: null, strokeColor: "#bbb" });
     Object.assign(el, props);
     el.customData = { ...props.customData, origin: "agent" };
-    if (LINEAR.has(type)) {
+    if (LINEAR2.has(type)) {
       const b = box(el);
       Object.assign(el, { width: b.x2 - b.x1, height: b.y2 - b.y1 });
     }
     return el;
   }
   function label(container, text, style = {}) {
-    const b = box(container);
-    const size = measure(text, num(style.fontSize, 20));
-    const t = element("text", `${container.id}-label`, {
+    const t = centre(element("text", `${container.id}-label`, {
       text,
       textAlign: "center",
       verticalAlign: "middle",
       containerId: container.id,
       frameId: container.frameId ?? null,
       strokeColor: container.strokeColor,
-      ...style,
-      x: (b.x1 + b.x2) / 2 - size.width / 2,
-      y: (b.y1 + b.y2) / 2 - size.height / 2
-    });
-    if (get(t.id)) t.id = newId();
+      ...style
+    }), container);
+    if (live(t.id)) t.id = newId();
     return t;
   }
   function splitStyle(type, fields) {
@@ -6697,12 +6831,20 @@ function agentWrite(store, ops, opts) {
     }
     return { own, style };
   }
-  const bindTo = (target, ref) => ({ ...target, boundElements: [...refs(target), ref] });
+  const bindTo = (target, ref) => ({ ...target, boundElements: [...refs(target).filter((r) => r.id !== ref.id), ref] });
   function route(el, a, b) {
     const ab = box(b), aa = box(a);
     const [sx, sy] = edgePoint(a, (ab.x1 + ab.x2) / 2, (ab.y1 + ab.y2) / 2);
     const [ex, ey] = edgePoint(b, (aa.x1 + aa.x2) / 2, (aa.y1 + aa.y2) / 2);
     return { ...el, x: sx, y: sy, width: Math.abs(ex - sx), height: Math.abs(ey - sy), points: [[0, 0], [ex - sx, ey - sy]] };
+  }
+  function reroute(e) {
+    const a = live(bindingId(e.startBinding)), b = live(bindingId(e.endBinding));
+    if (!LINEAR2.has(e.type) || !a || !b) return;
+    const r = route(e, a, b);
+    next.set(r.id, r);
+    const t = live(boundTextId(r));
+    if (t) next.set(t.id, centre(t, r));
   }
   list.forEach((op, i) => {
     const conflict = (id, reason, version) => conflicts.push({ op: i, id, reason, ...version !== void 0 && { version } });
@@ -6710,7 +6852,7 @@ function agentWrite(store, ops, opts) {
       const { op: _, type, id = newId(), label: text2, start, end, ...fields2 } = op;
       if (typeof type !== "string" || !type) throw new WorkspaceError(`op ${i}: type is required`);
       const { own: props, style: style2 } = splitStyle(type, fields2);
-      if (get(id)) return conflict(id, "exists");
+      if (live(id)) return conflict(id, "exists");
       const ends = [start, end].filter((e) => typeof e === "string");
       for (const e of ends) {
         if (!live(e)) return conflict(e, "missing");
@@ -6719,7 +6861,7 @@ function agentWrite(store, ops, opts) {
       }
       let el2 = element(type, id, props);
       const out = [];
-      if (LINEAR.has(type) && start && end) {
+      if (LINEAR2.has(type) && start && end) {
         const a = live(start), b = live(end);
         el2 = {
           ...route(el2, a, b),
@@ -6730,6 +6872,7 @@ function agentWrite(store, ops, opts) {
         out.push(bindTo(start === end ? out[0] : b, { id, type: "arrow" }));
       }
       if (typeof text2 === "string" && text2 && CONTAINERS.has(type)) {
+        el2 = fit(el2, text2, num2(style2.fontSize, 20));
         const t2 = label(el2, text2, style2);
         el2 = bindTo(el2, { id: t2.id, type: "text" });
         out.push(t2);
@@ -6765,27 +6908,28 @@ function agentWrite(store, ops, opts) {
     const { own: patch, style } = splitStyle(el.type, fields);
     let updated = { ...el, ...patch };
     const t = live(textId);
-    if (t && (typeof text === "string" || Object.keys(style).length)) {
-      const s = typeof text === "string" ? text : String(t.text ?? "");
-      const size = measure(s, num(style.fontSize ?? t.fontSize, 20));
-      next.set(t.id, {
-        ...t,
-        ...style,
-        text: s,
-        originalText: s,
-        ...size,
-        x: num(t.x, 0) + (num(t.width, 0) - size.width) / 2,
-        y: num(t.y, 0) + (num(t.height, 0) - size.height) / 2
-      });
-    } else if (typeof text === "string") {
-      if (text && CONTAINERS.has(el.type)) {
-        const nt = label(updated, text, style);
-        updated = bindTo(updated, { id: nt.id, type: "text" });
-        next.set(nt.id, nt);
-        created.push(nt.id);
-      }
+    if (el.type === "text" && !el.containerId && (typeof patch.text === "string" || patch.fontSize !== void 0)) {
+      const s = typeof patch.text === "string" ? patch.text : textOf2(el);
+      updated = { ...updated, text: s, originalText: s, ...measureText(s, num2(updated.fontSize, 20)) };
+    } else if (t) {
+      const s = typeof text === "string" ? text : textOf2(t);
+      const fontSize = num2(style.fontSize ?? t.fontSize, 20);
+      updated = fit(updated, s, fontSize);
+      next.set(t.id, centre({ ...t, ...style, text: s, originalText: s, ...measureText(s, fontSize) }, updated));
+    } else if (typeof text === "string" && text && CONTAINERS.has(el.type)) {
+      updated = fit(updated, text, num2(style.fontSize, 20));
+      const nt = label(updated, text, style);
+      updated = bindTo(updated, { id: nt.id, type: "text" });
+      next.set(nt.id, nt);
+      created.push(nt.id);
     }
     next.set(el.id, updated);
+    if (!LINEAR2.has(el.type) && !sameBox(box(el), box(updated))) {
+      for (const r of refs(updated)) {
+        const a = live(r.id);
+        if (r.type === "arrow" && a && !blocked(a.id)) reroute(a);
+      }
+    }
     applied.push({ op: i, kind: "update", id: el.id });
   });
   let frameId;
@@ -6798,10 +6942,10 @@ function agentWrite(store, ops, opts) {
       if (!frame || frame.type !== "frame") throw new WorkspaceError(`no frame [${opts.frameId}] on this board`);
     } else {
       frame = store.all().filter((e) => alive(e) && e.type === "frame" && e.name === PROPOSAL_FRAME).sort((p, q) => String(p.index ?? "").localeCompare(String(q.index ?? ""))).at(-1);
-      const inside = new Set(loose.map((e) => e.id));
-      const proposed = (id) => typeof id === "string" && (inside.has(id) || !!frame && get(id)?.frameId === frame.id);
+      const inside2 = new Set(loose.map((e) => e.id));
+      const proposed = (id) => typeof id === "string" && (inside2.has(id) || !!frame && get(id)?.frameId === frame.id);
       const ends = (e) => [e.startBinding, e.endBinding].map((b) => b?.elementId).filter(Boolean);
-      framed = loose.filter((e) => !LINEAR.has(e.type) || ends(e).every(proposed));
+      framed = loose.filter((e) => !LINEAR2.has(e.type) || ends(e).every(proposed));
       if (framed.length) frame = place(framed, frame);
     }
     if (framed.length) {
@@ -6816,14 +6960,14 @@ function agentWrite(store, ops, opts) {
     const isNew2 = new Set(created);
     const others = [.../* @__PURE__ */ new Set([...store.all().map((e) => e.id), ...next.keys()])].map(get).filter((e) => !!e && alive(e) && !isNew2.has(e.id));
     const ours = (o, f2) => !!f2 && (o.id === f2.id || o.frameId === f2.id);
-    const clear = (b, f2) => !others.some((o) => !ours(o, f2) && overlaps(b, box(o)));
+    const clear = (b, f2) => !others.some((o) => !ours(o, f2) && overlaps2(b, box(o)));
     const content = union(els.map(box));
     if (frame) {
       if (blocked(frame.id)) return frame;
       const grown = union([content, box(frame)]);
       if (clear(grown, frame)) {
-        const fit = { x: grown.x1, y: grown.y1, width: grown.x2 - grown.x1, height: grown.y2 - grown.y1 };
-        if (Object.entries(fit).some(([k, v]) => frame[k] !== v)) next.set(frame.id, { ...frame, ...fit });
+        const fit2 = { x: grown.x1, y: grown.y1, width: grown.x2 - grown.x1, height: grown.y2 - grown.y1 };
+        if (Object.entries(fit2).some(([k, v]) => frame[k] !== v)) next.set(frame.id, { ...frame, ...fit2 });
         return frame;
       }
     }
@@ -6833,27 +6977,16 @@ function agentWrite(store, ops, opts) {
       fb = { ...fb, x1: fb.x1 + dx, x2: fb.x2 + dx };
       const moved = new Set(els.map((e) => e.id));
       for (const [id, e] of next) {
-        if (moved.has(id) || e.containerId && moved.has(e.containerId)) next.set(id, { ...e, x: num(e.x, 0) + dx });
+        if (moved.has(id) || e.containerId && moved.has(e.containerId)) next.set(id, { ...e, x: num2(e.x, 0) + dx });
       }
-      for (const id of created) {
-        const e = next.get(id);
-        const a = live(e.startBinding?.elementId), b = live(e.endBinding?.elementId);
-        if (!LINEAR.has(e.type) || !a || !b) continue;
-        const r = route(e, a, b);
-        next.set(id, r);
-        const t = live(boundTextId(r));
-        if (t) {
-          const rb = box(r);
-          next.set(t.id, { ...t, x: (rb.x1 + rb.x2) / 2 - num(t.width, 0) / 2, y: (rb.y1 + rb.y2) / 2 - num(t.height, 0) / 2 });
-        }
-      }
+      for (const id of created) reroute(next.get(id));
     }
     const f = element("frame", newId(), { name: PROPOSAL_FRAME, x: fb.x1, y: fb.y1, width: fb.x2 - fb.x1, height: fb.y2 - fb.y1 });
     created.unshift(f.id);
     next.set(f.id, f);
     return f;
   }
-  if (!next.size) return { rev: store.revision, applied, conflicts, elements: [] };
+  if (!next.size) return { rev: store.revision, applied, conflicts, elements: [], warnings: [] };
   let top = store.all().reduce((m, e) => typeof e.index === "string" && (!m || e.index > m) ? e.index : m, null);
   const isNew = new Set(created);
   const elements = [...created.filter((id) => next.has(id)), ...[...next.keys()].filter((id) => !isNew.has(id))].map((id) => {
@@ -6863,7 +6996,8 @@ function agentWrite(store, ops, opts) {
     return out;
   });
   const rev = store.upsert(elements, "agent");
-  return { rev, applied, conflicts, ...frameId && { frameId }, elements };
+  const warnings = layoutIssues(store.all(), elements.map((e) => e.id));
+  return { rev, applied, conflicts, ...frameId && { frameId }, elements, warnings };
 }
 function acceptProposal(store, opts) {
   const frame = store.get(opts.frameId);
@@ -6872,7 +7006,7 @@ function acceptProposal(store, opts) {
   const ids = opts.elementIds ?? inFrame();
   const stray = ids.find((id) => !inFrame().includes(id));
   if (stray) throw new WorkspaceError(`[${stray}] is not in frame [${frame.id}]`);
-  const patch = { frameId: null, ...!opts.keepColor && { strokeColor: ACCEPTED_COLOR } };
+  const patch = { frameId: null };
   const write = (ops) => agentWrite(store, ops, { presence: opts.presence, now: opts.now, frameId: null });
   const r = ids.length ? write(ids.map((id) => ({ op: "update", id, patch }))) : { rev: store.revision, applied: [], conflicts: [], elements: [] };
   const result = { rev: r.rev, accepted: r.applied.map((a) => a.id), conflicts: r.conflicts, frameDeleted: false, elements: r.elements };
@@ -6917,7 +7051,7 @@ async function agentApi(workspace2, rooms, url, req, res) {
     if (!session) throw new WorkspaceError("session is required");
     const as = role(b.as);
     const diagramId = String(b.diagramId ?? "");
-    const binding = workspace2.bind(session, diagramId, as, b.edit === true);
+    const binding = workspace2.bind(session, diagramId, as, b.edit === true, b.takeover === true);
     const store2 = await workspace2.store(diagramId);
     if (workspace2.cursor(diagramId, as) === void 0) await workspace2.setCursor(diagramId, as, store2.revision);
     json(res, 200, { ...binding, rev: store2.revision });
@@ -7013,7 +7147,6 @@ async function agentApi(workspace2, rooms, url, req, res) {
     const { elements, ...result } = acceptProposal(store, {
       frameId: String(b.frameId ?? ""),
       ...ids && { elementIds: ids },
-      keepColor: b.keepColor === true,
       presence: [...rooms.presence(id)?.values() ?? []]
     });
     if (elements.length) rooms.broadcast(id, { t: "scene_patch", rev: result.rev, origin: "agent", elements });

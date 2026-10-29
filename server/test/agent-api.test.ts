@@ -207,7 +207,7 @@ describe('agent writes over HTTP', () => {
     expect(await accept({ session: 'mcp-other', frameId: made.body.frameId })).toEqual({ status: 400, body: { error: `${diagram.id} is read-only for this session` } });
     const r = await accept({ session: `mcp-${process.pid}`, frameId: made.body.frameId });
     expect(r).toEqual({ status: 200, body: { rev: 3, accepted: ['p'], conflicts: [], frameDeleted: true } });
-    expect(store.get('p')).toMatchObject({ frameId: null, strokeColor: '#2f9e44' });
+    expect(store.get('p')).toMatchObject({ frameId: null, strokeColor: '#343a40' });
     expect((await accept({ session: `mcp-${process.pid}`, frameId: 'nope' })).body).toEqual({ error: '[nope] is not a frame on this board' });
   });
 });

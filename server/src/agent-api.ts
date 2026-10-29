@@ -3,14 +3,14 @@
 // how much is unread, and `changes` / `wait` hand over the report and move
 // the position forward.
 //
-//   POST   /api/sessions               bind {session, diagramId, as, edit?} → {mode, writer, rev}
+//   POST   /api/sessions               bind {session, diagramId, as, edit?, takeover?} → {mode, writer, rev}
 //   DELETE /api/sessions/:session      release
 //   GET    /api/diagrams/:id/scene     {rev, elements} without tombstones
 //   GET    /api/diagrams/:id/status?as=role     {unread, fromRev, toRev, name, owner}
 //   POST   /api/diagrams/:id/changes  {as, since?, origin?}  → report
 //   POST   /api/diagrams/:id/wait     {as, since?, idleSeconds?, timeoutSeconds?, origin?}
 //   POST   /api/diagrams/:id/apply    {session, ops, frameId?, color?} → {rev, applied, conflicts, frameId?}
-//   POST   /api/diagrams/:id/accept   {session, frameId, elementIds?, keepColor?}
+//   POST   /api/diagrams/:id/accept   {session, frameId, elementIds?}
 //                                      → {rev, accepted, conflicts, frameDeleted}
 //                                      apply and accept: only the session holding the writer lease
 //
@@ -66,7 +66,7 @@ export async function agentApi(workspace: Workspace, rooms: SyncRooms, url: URL,
     if (!session) throw new WorkspaceError('session is required');
     const as = role(b.as);
     const diagramId = String(b.diagramId ?? '');
-    const binding = workspace.bind(session, diagramId, as, b.edit === true);
+    const binding = workspace.bind(session, diagramId, as, b.edit === true, b.takeover === true);
     const store = await workspace.store(diagramId);
     // A role's first bind starts reading from now, not from the board's birth.
     if (workspace.cursor(diagramId, as) === undefined) await workspace.setCursor(diagramId, as, store.revision);
@@ -173,7 +173,6 @@ export async function agentApi(workspace: Workspace, rooms: SyncRooms, url: URL,
     const { elements, ...result } = acceptProposal(store, {
       frameId: String(b.frameId ?? ''),
       ...(ids && { elementIds: ids }),
-      keepColor: b.keepColor === true,
       presence: [...(rooms.presence(id)?.values() ?? [])]
     });
     if (elements.length) rooms.broadcast(id, { t: 'scene_patch', rev: result.rev, origin: 'agent', elements });

@@ -104,6 +104,23 @@ describe('session binding and writer lease', () => {
     expect(ws.bind('s2', po.id, 'po')).toMatchObject({ mode: 'writer' });
   });
 
+  it('names the role holding the lease and how long it has been idle', async () => {
+    let now = 0;
+    const ws = await Workspace.load({ dir, now: () => now });
+    const po = await ws.create({ name: 'Journey', kind: 'journey', owner: 'po' });
+    ws.bind('s1', po.id, 'po');
+    now = 90_000;
+    expect(ws.bind('s2', po.id, 'po')).toMatchObject({ mode: 'reader', writer: 's1', writerRole: 'po', writerIdleSeconds: 90 });
+  });
+
+  it('takes the lease over from a session left open, which then reads', async () => {
+    const { ws, po } = await setup();
+    ws.bind('s1', po.id, 'po');
+    expect(ws.bind('s2', po.id, 'po', false, true)).toMatchObject({ mode: 'writer' });
+    expect(() => ws.assertWrite('s1', po.id)).toThrow(/read-only/);
+    expect(ws.bind('s3', po.id, 'dev', false, true)).toMatchObject({ mode: 'reader', writer: 's2' });
+  });
+
   it('refuses writes to a diagram the session is not bound to', async () => {
     const { ws, po, dev } = await setup();
     ws.bind('s1', po.id, 'po');

@@ -136,7 +136,7 @@ describe('a bound session', () => {
     expect(lines[0]).toMatch(/^opened d_over "Overview" as po \(writer\) · rev 4 · http:\/\/127\.0\.0\.1:\d+\/d\/d_over$/);
     expect(lines[1]).toBe('board "Overview" (overview) · rev 4 · 1 shape');
     // The board's kind brings its drawing rules; `free` brings none.
-    expect(r.text).toContain('overview conventions: impact map:');
+    expect(r.text).toContain('overview: draw it as an expert in impact mapping');
     expect((await po.call('read_diagram')).text).toMatch(/^board "Overview"/);
     url = (await findServer(dir))!.url;
     expect(JSON.parse(readFileSync(join(dir, '.claude', 'skills', 'setup-excalidraw-live-multiagent', 'state', 'sessions', '111.json'), 'utf8')))
@@ -148,7 +148,7 @@ describe('a bound session', () => {
       .toMatch(/^opened d_over "Overview" as dev \(read-only: owner is po\. To change it, first ask the user .* call open_diagram \{id, as, edit: true\}\)/);
     // Confirmed, but the owner's session still holds the lease.
     expect((await dev.call('open_diagram', { id: 'd_over', as: 'dev', edit: true })).text)
-      .toMatch(/^opened d_over "Overview" as dev \(read-only: mcp-test-po holds the writer lease\)/);
+      .toMatch(/^opened d_over "Overview" as dev \(read-only: a po session \(mcp-test-po, idle \d+s\) holds the writer lease\. Ask the user .* call open_diagram \{id, as, edit: true, takeover: true\}/);
     await dev.call('open_diagram', { id: 'd_over', as: 'dev' });
   });
 
@@ -190,7 +190,7 @@ describe('a bound session', () => {
     expect(lines[1]).toBe('created [n]');
     expect(lines[2]).toBe('conflict op 1 [checkout]: it changed since you read it (now v1)');
     const scene = await (await fetch(`${url}/api/diagrams/d_over/scene`)).json();
-    expect(scene.elements.find((e: SceneEl) => e.id === 'n')).toMatchObject({ strokeColor: '#1971c2', customData: { origin: 'agent' } });
+    expect(scene.elements.find((e: SceneEl) => e.id === 'n')).toMatchObject({ strokeColor: '#343a40', customData: { origin: 'agent' } });
   });
 
   it('refuses a write meant for another board and leaves both files unchanged', async () => {
@@ -222,14 +222,14 @@ describe('a bound session', () => {
     expect(await dev.call('make_ref', { elementId: 'nope' })).toMatchObject({ isError: true, text: 'no element [nope] on d_over' });
   });
 
-  it('accepts a proposal: its elements leave the frame in green and the empty frame goes', async () => {
+  it('accepts a proposal: its elements leave the frame with their colours and the empty frame goes', async () => {
     const before = (await (await fetch(`${url}/api/diagrams/d_over/scene`)).json()).elements as SceneEl[];
     const frameId = before.find((e) => e.id === 'n')!.frameId as string;
     expect(await dev.call('accept_proposal', { frameId })).toEqual({ isError: true, text: 'd_over is read-only for this session' });
     expect((await po.call('accept_proposal', { frameId, diagramId: 'd_seq' })).isError).toBe(true);
     expect((await po.call('accept_proposal', { frameId, diagramId: 'd_over' })).text).toBe('on "Overview" (d_over) rev 10 · accepted 1 [n] · frame deleted');
     const after = (await (await fetch(`${url}/api/diagrams/d_over/scene`)).json()).elements as SceneEl[];
-    expect(after.find((e) => e.id === 'n')).toMatchObject({ frameId: null, strokeColor: '#2f9e44' });
+    expect(after.find((e) => e.id === 'n')).toMatchObject({ frameId: null, strokeColor: '#343a40' });
     expect(after.some((e) => e.id === frameId)).toBe(false);
   });
 
@@ -252,9 +252,18 @@ describe('a bound session', () => {
   });
 
   it('creates a diagram with the conventions of its kind, none for free', async () => {
-    expect((await po.call('create_diagram', { name: 'Scratch', kind: 'free' })).text).not.toContain('conventions');
+    expect((await po.call('create_diagram', { name: 'Scratch', kind: 'free' })).text).not.toContain('draw it as an expert');
     expect((await po.call('create_diagram', { name: 'API', kind: 'c4-component' })).text)
-      .toMatch(/\nc4-component conventions: rectangle = system\/container/);
+      .toMatch(/\nc4-component: draw it as an expert in the C4 model.*Fill\/stroke: component #e5dbff\/#5f3dc4/);
+  });
+
+  it('reports layout problems after a write and in the summary', async () => {
+    const r = await po.call('apply_changes', { diagramId: 'd_over', frameId: null, ops: [
+      { op: 'create', type: 'rectangle', id: 'o1', x: 5000, y: 0 },
+      { op: 'create', type: 'rectangle', id: 'o2', x: 5050, y: 0 }
+    ] });
+    expect(r.text.split('\n').at(-1)).toBe('layout: rectangle [o1] overlaps rectangle [o2]');
+    expect((await po.call('get_scene_summary')).text).toMatch(/\nlayout issues:\n(- .*\n)*- rectangle \[o1\] overlaps rectangle \[o2\]/);
   });
 
   it('releases the lease and its session file on close', async () => {

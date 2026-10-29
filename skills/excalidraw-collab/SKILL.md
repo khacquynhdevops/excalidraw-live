@@ -42,7 +42,7 @@ A session works on one board at a time. When the conversation turns to another b
 
 ## 3. Propose on the canvas
 
-Everything you draw is blue (`customData.origin='agent'`). Where it lands depends on who asked for it:
+Everything you draw is marked `customData.origin='agent'`; colour it by meaning (see Conventions), not by who drew it. Where it lands depends on who asked for it:
 
 - **A command** from the user ("connect A to B", "add X", "change Y"): draw it on the board directly with `frameId: null`. The user asked for exactly this, so it is not a proposal.
 - **Your own proposal** (options, a suggested structure, something the user did not ask for by name): leave `frameId` out. It goes into the "Claude proposal" frame, which the server places in free space; arrows that reach the user's shapes stay outside the frame.
@@ -51,7 +51,7 @@ Everything you draw is blue (`customData.origin='agent'`). Where it lands depend
 - Change or delete the user's own elements only after they agree in the conversation. Pass `expectedVersion` from your last read when you do.
 - `conflicts` come back for elements the user is editing, has selected, changed in the last 5s, or that changed since you read them. Nothing else in that op was applied. Read again, then retry once or ask the user. Never force through.
 - Connect with arrows: `{op:'create', type:'arrow', start:<id>, end:<id>, label?}`. Put text inside shapes with `label`. Font, size and colour given on a shape or arrow (`fontFamily`, `fontSize`, `strokeColor`) also style its label, on create and on update.
-- When the user accepts a proposal, call `accept_proposal {diagramId, frameId}`, with `elementIds` for the part they accepted. The elements leave the frame and turn green; pass `keepColor: true` if the user wants them to stay blue. An empty frame is deleted. Record decisions in a frame named "Decisions" (a text per decision).
+- When the user accepts a proposal, call `accept_proposal {diagramId, frameId}`, with `elementIds` for the part they accepted. The elements leave the frame and keep their colours. An empty frame is deleted. Record decisions in a frame named "Decisions" (a text per decision).
 
 Element fields and op examples: [references/elements.md](references/elements.md).
 
@@ -70,9 +70,22 @@ Diagrams refine each other: `story-map` → `journey`/`overview` → `c4-context
 
 ## Conventions
 
-`open_diagram` and `create_diagram` return how to draw the board's kind (shapes and layout). Follow it; a `free` board has none.
+`open_diagram` and `create_diagram` name the notation for the board's kind, what each colour means (fill/stroke hex) and mistakes to avoid. Draw as an expert in that notation would, for a reader new to the system; use those colours. On a `free` board, pick colours from the palette in [references/elements.md](references/elements.md) by meaning.
 
-Colours: blue `#1971c2` is Claude's proposal, red `#e03131` marks a risk or problem, green `#2f9e44` marks something done or agreed. Leave the user's own colours as they are.
+- **Colour means what a thing is.** The same kind of thing gets the same colour on every board. Use at most 7 colours. Red is only for risks, problems and failures.
+- **Neutral ink.** Arrows `#868e96`; text, frames and plain steps `#343a40`; `fillStyle: 'solid'`.
+- **One focus.** Emphasise the one thing the board is about with `strokeWidth: 4`, not with a new colour.
+- **Never colour alone.** Shape, label or a dashed stroke must carry the same meaning, so the board reads in greyscale and for colour-blind users.
+- **Legend.** When the board uses 3 or more fill colours, add a frame named "Legend" to the right of the drawing: a small swatch and a text per colour.
+- Leave the user's own colours as they are.
+
+Before you report a drawing done, check:
+
+1. Each colour matches the kind's meaning, and there are 7 or fewer.
+2. `get_scene_summary` lists no `layout issues`: nothing overlaps, labels fit inside their shapes, arrow labels are short and clear of shapes, nothing sticks out of its frame.
+3. Every arrow has a start and an end; labels say what flows.
+4. One focus at most.
+5. A "Legend" frame exists if 3 or more fill colours are used.
 
 ## When it goes wrong
 

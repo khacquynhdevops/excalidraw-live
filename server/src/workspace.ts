@@ -25,8 +25,11 @@ export interface NewDiagram {
 export interface Binding {
   diagramId: string;
   mode: 'writer' | 'reader';
-  // Session holding the writer lease, if any.
+  // Session holding the writer lease, if any, its role and how long it has
+  // been idle.
   writer?: string;
+  writerRole?: string;
+  writerIdleSeconds?: number;
 }
 
 // Elements (and new files) merged from an outside edit of a diagram file.
@@ -60,12 +63,14 @@ function slug(name: string): string {
 // Sessions (one Claude Code session = one role) bind to a single diagram.
 // The diagram's owner role writes; another role writes only when it asks to
 // edit (after the user confirmed). One session at a time holds that writer
-// lease; everyone else reads.
+// lease; everyone else reads. A session left open elsewhere keeps the lease
+// until it closes, or until another session takes it over (again after the
+// user confirmed).
 export class Workspace {
   readonly dir: string;
   private entries: DiagramEntry[] = [];
   private stores = new Map<string, Promise<SceneStore>>();
-  private sessions = new Map<string, Binding>();
+  private sessions = new Map<string, Binding & { as: string; active: number }>();
   private leases = new Map<string, string>(); // diagramId → sessionId
   private unwatch: (() => Promise<void>)[] = [];
   private fileListeners = new Set<FileChangeListener>();
@@ -163,21 +168,29 @@ export class Workspace {
     this.fileListeners.add(fn);
   }
 
-  bind(sessionId: string, diagramId: string, as: string, edit = false): Binding {
+  bind(sessionId: string, diagramId: string, as: string, edit = false, takeover = false): Binding {
     const entry = this.require(diagramId);
     this.release(sessionId);
     // An MCP session that died without saying so must not keep the lease.
     const held = this.leases.get(diagramId);
     if (held && !sessionAlive(held)) this.release(held);
     const holder = this.leases.get(diagramId);
+    const now = this.opts.now?.() ?? Date.now();
     let binding: Binding;
-    if ((as === entry.owner || edit) && !holder) {
+    if ((as === entry.owner || edit) && (!holder || takeover)) {
+      // The session that held it reads from now on.
+      const old = holder ? this.sessions.get(holder) : undefined;
+      if (old) this.sessions.set(holder!, { ...old, mode: 'reader', writer: sessionId });
       this.leases.set(diagramId, sessionId);
       binding = { diagramId, mode: 'writer', writer: sessionId };
     } else {
-      binding = { diagramId, mode: 'reader', writer: holder };
+      const h = holder ? this.sessions.get(holder) : undefined;
+      binding = {
+        diagramId, mode: 'reader', writer: holder,
+        ...(h && { writerRole: h.as, writerIdleSeconds: Math.round((now - h.active) / 1000) })
+      };
     }
-    this.sessions.set(sessionId, binding);
+    this.sessions.set(sessionId, { ...binding, as, active: now });
     return binding;
   }
 
@@ -193,6 +206,7 @@ export class Workspace {
     if (!b) throw new WorkspaceError(`session ${sessionId} is not bound to a diagram`);
     if (b.diagramId !== diagramId) throw new WorkspaceError(`session is bound to ${b.diagramId}, not ${diagramId}`);
     if (this.leases.get(diagramId) !== sessionId) throw new WorkspaceError(`${diagramId} is read-only for this session`);
+    b.active = this.opts.now?.() ?? Date.now();
   }
 
   // Last revision `role` has read on a diagram; undefined before its first bind.

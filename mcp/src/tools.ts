@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import {
-  DIAGRAM_KINDS, alive, formatRef, labelOf, parseRef, summarizeScene,
+  DIAGRAM_KINDS, alive, formatRef, labelOf, layoutIssues, parseRef, summarizeScene,
   type DiagramEntry, type SceneEl
 } from '@excalidraw-live/shared';
 import { diagramsDir, ensureServer, findServer, stateDir } from '@excalidraw-live/shared/ensureServer';
@@ -110,8 +110,11 @@ export function createBoardServer(opts: BoardServerOptions) {
     return s.url;
   }
 
-  function bindOn(url: string, b: Binding) {
-    return request<{ mode: 'writer' | 'reader'; writer?: string; rev: number }>(url, 'POST', '/api/sessions', { session: opts.sessionId, ...b });
+  // `takeover` is for this call only: a restarted server must not hand the
+  // lease back on its own.
+  function bindOn(url: string, b: Binding, takeover = false) {
+    return request<{ mode: 'writer' | 'reader'; writer?: string; writerRole?: string; writerIdleSeconds?: number; rev: number }>(
+      url, 'POST', '/api/sessions', { session: opts.sessionId, ...b, takeover });
   }
 
   async function bound(): Promise<Binding & { url: string }> {
@@ -120,10 +123,17 @@ export function createBoardServer(opts: BoardServerOptions) {
     return { ...binding, url: await server() };
   }
 
-  async function open(id: string, as: string, edit = false): Promise<string> {
+  // "a dev session (mcp-123, idle 12 min)"
+  function holder(b: { writer?: string; writerRole?: string; writerIdleSeconds?: number }) {
+    if (!b.writer) return 'another session';
+    const idle = b.writerIdleSeconds === undefined ? '' : `, idle ${b.writerIdleSeconds < 60 ? `${b.writerIdleSeconds}s` : `${Math.round(b.writerIdleSeconds / 60)} min`}`;
+    return `${b.writerRole ? `a ${b.writerRole} session` : 'a session'} (${b.writer}${idle})`;
+  }
+
+  async function open(id: string, as: string, edit = false, takeover = false): Promise<string> {
     const e = await entry(id);
     const url = await server();
-    const b = await bindOn(url, { diagramId: id, as, edit });
+    const b = await bindOn(url, { diagramId: id, as, edit }, takeover);
     binding = { diagramId: id, as, edit };
     await mkdir(join(sessionFile, '..'), { recursive: true });
     await writeFile(sessionFile, JSON.stringify({ diagramId: id, as, mode: b.mode, session: opts.sessionId }) + '\n');
@@ -131,7 +141,7 @@ export function createBoardServer(opts: BoardServerOptions) {
     // Another session holding the lease is worth naming. Another role's board
     // is read-only until the user confirms editing it.
     const mode = b.mode === 'writer' ? (as === e.owner ? 'writer' : `writer on ${e.owner}'s board`)
-      : as === e.owner || edit ? `read-only: ${b.writer ?? 'another session'} holds the writer lease`
+      : as === e.owner || edit ? `read-only: ${holder(b)} holds the writer lease. Ask the user whether that session is done with this board; only on yes call open_diagram {id, as${edit ? ', edit: true' : ''}, takeover: true}, after which that session only reads`
       : `read-only: owner is ${e.owner}. To change it, first ask the user in their language "This board belongs to ${e.owner}, not ${as}. Are you sure you want to edit it?" and only on yes call open_diagram {id, as, edit: true}`;
     const lines = [`opened ${id} "${e.name}" as ${as} (${mode}) · rev ${b.rev} · ${url}/d/${encodeURIComponent(id)}`];
     const s = await scene(e);
@@ -208,8 +218,9 @@ export function createBoardServer(opts: BoardServerOptions) {
   tool('open_diagram', "Bind this session to one diagram as a role. The owner role gets the writer lease; other roles read unless they pass edit: true, which only the user's yes to editing another role's board allows. Returns the URL for the user and a summary of the board.", {
     id: z.string(),
     as: z.string().describe('your role, e.g. po, dev, tester'),
-    edit: z.boolean().optional().describe("write on another role's board; only after the user confirmed")
-  }, ({ id, as, edit }) => open(id, as, edit));
+    edit: z.boolean().optional().describe("write on another role's board; only after the user confirmed"),
+    takeover: z.boolean().optional().describe('take the writer lease from another session; only after the user confirmed')
+  }, ({ id, as, edit, takeover }) => open(id, as, edit, takeover));
 
   tool('read_diagram', "Summarize a diagram, read-only (e.g. another role's board). Accepts an id, a dl:// ref or a board URL; with neither, the diagram open in this session. Works without the canvas server.", {
     id: z.string().optional(),
@@ -258,13 +269,16 @@ export function createBoardServer(opts: BoardServerOptions) {
     return lines.join('\n');
   });
 
-  tool('get_scene_summary', 'Summarize the open diagram (or one frame of it): shapes, arrows, notes, frames, groups and the revision. Use when the user asks about the board.', {
+  tool('get_scene_summary', 'Summarize the open diagram (or one frame of it): shapes, arrows, notes, frames, groups, the revision and layout issues (labels overflowing or outside their shape, overlaps, elements outside their frame). Use when the user asks about the board, and after a large drawing before you report it done.', {
     frameId: z.string().optional()
   }, async ({ frameId }) => {
     const b = await bound();
     const e = await entry(b.diagramId);
     const s = await scene(e);
-    return summarizeScene(s.elements, { rev: s.rev, name: e.name, kind: e.kind, frameId });
+    const summary = summarizeScene(s.elements, { rev: s.rev, name: e.name, kind: e.kind, frameId });
+    const inFrame = frameId ? s.elements.filter((x: SceneEl) => x.id === frameId || x.frameId === frameId).map((x: SceneEl) => x.id) : undefined;
+    const issues = layoutIssues(s.elements, inFrame);
+    return issues.length ? `${summary}\nlayout issues:\n${issues.map((l) => `- ${l}`).join('\n')}` : summary;
   });
 
   tool('get_changes_since', "What changed on the open diagram. Without `since` it reports everything since this role last read and marks it read. Call it when the user's question is about the board, not on your own.", {
@@ -309,7 +323,7 @@ export function createBoardServer(opts: BoardServerOptions) {
     return { b, e, id: encodeURIComponent(b.diagramId) };
   }
 
-  tool('apply_changes', 'Change the open diagram (writer only). Pass diagramId to make sure it is the board you mean. New elements are blue. When the user asked for this exact change ("connect A and B", "draw X", "rename Y"), pass frameId: null so it lands on the board directly. Leave frameId out only for content you propose on your own (options, a suggested structure): it then goes into a "Claude proposal" frame placed in free space; arrows that reach the user\'s shapes stay outside it. Elements the user is editing, has selected or changed in the last 5s are not touched; they come back as conflicts: read again, then retry or ask.', {
+  tool('apply_changes', 'Change the open diagram (writer only). Pass diagramId to make sure it is the board you mean. Colour new elements by meaning (see the kind conventions); the default stroke is neutral. When the user asked for this exact change ("connect A and B", "draw X", "rename Y"), pass frameId: null so it lands on the board directly. Leave frameId out only for content you propose on your own (options, a suggested structure): it then goes into a "Claude proposal" frame placed in free space; arrows that reach the user\'s shapes stay outside it. Elements the user is editing, has selected or changed in the last 5s are not touched; they come back as conflicts: read again, then retry or ask.', {
     ops: z.array(z.discriminatedUnion('op', [
       z.object({
         op: z.literal('create'),
@@ -329,7 +343,7 @@ export function createBoardServer(opts: BoardServerOptions) {
     ])).min(1),
     diagramId: z.string().optional().describe('the board you mean to change; refused if another board is open'),
     frameId: z.string().nullable().optional(),
-    color: z.string().optional()
+    color: z.string().optional().describe('default stroke for this call; neutral #343a40 when left out')
   }, async ({ ops, diagramId, frameId, color }) => {
     const { b, e, id } = await writeTarget(diagramId);
     const r = await request(b.url, 'POST', `/api/diagrams/${id}/apply`, { session: opts.sessionId, ops, frameId, color });
@@ -342,17 +356,17 @@ export function createBoardServer(opts: BoardServerOptions) {
     for (const c of r.conflicts) {
       lines.push(`conflict op ${c.op} [${c.id}]: ${why[c.reason] ?? c.reason}${c.version !== undefined ? ` (now v${c.version})` : ''}`);
     }
+    for (const w of r.warnings ?? []) lines.push(`layout: ${w}`);
     return lines.join('\n');
   });
 
-  tool('accept_proposal', 'When the user accepts a proposal (all of it, or the elements they name): its elements leave the frame and turn green, unless keepColor; a frame left empty is deleted. Elements the user is busy with come back as conflicts.', {
+  tool('accept_proposal', 'When the user accepts a proposal (all of it, or the elements they name): its elements leave the frame with their colours; a frame left empty is deleted. Elements the user is busy with come back as conflicts.', {
     frameId: z.string().describe('the proposal frame'),
     elementIds: z.array(z.string()).optional().describe('only these elements of the frame; default all'),
-    keepColor: z.boolean().optional().describe('keep the blue, when the user asks to'),
     diagramId: z.string().optional().describe('the board you mean to change; refused if another board is open')
-  }, async ({ frameId, elementIds, keepColor, diagramId }) => {
+  }, async ({ frameId, elementIds, diagramId }) => {
     const { b, e, id } = await writeTarget(diagramId);
-    const r = await request(b.url, 'POST', `/api/diagrams/${id}/accept`, { session: opts.sessionId, frameId, elementIds, keepColor });
+    const r = await request(b.url, 'POST', `/api/diagrams/${id}/accept`, { session: opts.sessionId, frameId, elementIds });
     const lines = [`on "${e.name}" (${e.id}) rev ${r.rev} · accepted ${r.accepted.length}${r.accepted.length ? ` [${r.accepted.join('] [')}]` : ''} · frame ${r.frameDeleted ? 'deleted' : 'kept'}`];
     for (const c of r.conflicts) {
       lines.push(`conflict [${c.id}]: ${why[c.reason] ?? c.reason}${c.version !== undefined ? ` (now v${c.version})` : ''}`);
