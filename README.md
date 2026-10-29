@@ -61,6 +61,8 @@ npm run build   # bundles into skills/setup-excalidraw-live-multiagent/runtime/ 
 npm test
 ```
 
+Feedback on how boards are drawn becomes the lightest fix that holds: a server fix, a layout check, or one "avoid" line for the kind. See [docs/drawing-feedback.md](docs/drawing-feedback.md).
+
 ## Known limits
 
 - Start `claude` from the project root, or the MCP server fails to connect.
