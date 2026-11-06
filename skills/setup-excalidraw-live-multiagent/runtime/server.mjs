@@ -62,6 +62,7 @@ var require_constants = __commonJS({
 var require_buffer_util = __commonJS({
   "node_modules/ws/lib/buffer-util.js"(exports, module) {
     "use strict";
+    var { websocketMask, websocketUnmask } = __require("http");
     var { EMPTY_BUFFER } = require_constants();
     var FastBuffer = Buffer[Symbol.species];
     function concat(list, totalLength) {
@@ -116,7 +117,16 @@ var require_buffer_util = __commonJS({
       toBuffer,
       unmask: _unmask
     };
-    if (!process.env.WS_NO_BUFFER_UTIL) {
+    if (websocketMask) {
+      module.exports.mask = function(source, mask, output, offset, length) {
+        if (length < 24) _mask(source, mask, output, offset, length);
+        else websocketMask(source, mask, output, offset, length);
+      };
+      module.exports.unmask = function(buffer, mask) {
+        if (buffer.length < 24) _unmask(buffer, mask);
+        else websocketUnmask(buffer, mask);
+      };
+    } else if (!process.env.WS_NO_BUFFER_UTIL) {
       try {
         const bufferUtil = __require("bufferutil");
         module.exports.mask = function(source, mask, output, offset, length) {
@@ -1511,12 +1521,15 @@ var require_sender = __commonJS({
           target[2] = target[3] = 0;
           target.writeUIntBE(dataLength, 4, 6);
         }
-        if (!options.mask) return [target, data];
+        if (!options.mask) {
+          return dataLength ? [target, data] : [target];
+        }
         target[1] |= 128;
         target[offset - 4] = mask[0];
         target[offset - 3] = mask[1];
         target[offset - 2] = mask[2];
         target[offset - 1] = mask[3];
+        if (!dataLength) return [target];
         if (skipMasking) return [target, data];
         if (merge) {
           applyMask(data, mask, target, offset, dataLength);
@@ -2874,9 +2887,14 @@ var require_websocket = __commonJS({
         opts.auth = `${parsedUrl.username}:${parsedUrl.password}`;
       }
       if (isIpcUrl) {
-        const parts = opts.path.split(":");
-        opts.socketPath = parts[0];
-        opts.path = parts[1];
+        const i = opts.path.indexOf(":");
+        if (i === -1) {
+          opts.socketPath = opts.path;
+          opts.path = "";
+        } else {
+          opts.socketPath = opts.path.slice(0, i);
+          opts.path = opts.path.slice(i + 1);
+        }
       }
       let req;
       if (opts.followRedirects) {
@@ -6506,7 +6524,19 @@ import { randomBytes as randomBytes2, randomInt as randomInt2 } from "node:crypt
 
 // node_modules/fractional-indexing/src/index.js
 var BASE_62_DIGITS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-function midpoint(a, b, digits) {
+var digitIndexCache = /* @__PURE__ */ new Map();
+function getDigitIndex(digits) {
+  let m = digitIndexCache.get(digits);
+  if (m === void 0) {
+    m = new Uint8Array(256);
+    for (let i = 0; i < digits.length; i++) {
+      m[digits.charCodeAt(i)] = i;
+    }
+    digitIndexCache.set(digits, m);
+  }
+  return m;
+}
+function midpoint(a, b, digits, lookup) {
   const zero = digits[0];
   if (b != null && a >= b) {
     throw new Error(a + " >= " + b);
@@ -6520,11 +6550,17 @@ function midpoint(a, b, digits) {
       n++;
     }
     if (n > 0) {
-      return b.slice(0, n) + midpoint(a.slice(n), b.slice(n), digits);
+      return b.slice(0, n) + midpoint(a.slice(n), b.slice(n), digits, lookup);
     }
   }
-  const digitA = a ? digits.indexOf(a[0]) : 0;
-  const digitB = b != null ? digits.indexOf(b[0]) : digits.length;
+  const digitA = a ? (
+    /** @type {number} */
+    lookup[a.charCodeAt(0)]
+  ) : 0;
+  const digitB = b != null ? (
+    /** @type {number} */
+    lookup[b.charCodeAt(0)]
+  ) : digits.length;
   if (digitB - digitA > 1) {
     const midDigit = Math.round(0.5 * (digitA + digitB));
     return digits[midDigit];
@@ -6532,152 +6568,240 @@ function midpoint(a, b, digits) {
     if (b && b.length > 1) {
       return b.slice(0, 1);
     } else {
-      return digits[digitA] + midpoint(a.slice(1), null, digits);
+      return digits[digitA] + midpoint(a.slice(1), null, digits, lookup);
     }
   }
 }
-function validateInteger(int) {
-  if (int.length !== getIntegerLength(int[0])) {
+function validateInteger(int, intDigits) {
+  if (int.length !== getIntegerLength(int[0], intDigits)) {
     throw new Error("invalid integer part of order key: " + int);
   }
 }
-function getIntegerLength(head) {
-  if (head >= "a" && head <= "z") {
-    return head.charCodeAt(0) - "a".charCodeAt(0) + 2;
-  } else if (head >= "A" && head <= "Z") {
-    return "Z".charCodeAt(0) - head.charCodeAt(0) + 2;
+function getIntegerLength(head, intDigits) {
+  if (intDigits === void 0) {
+    const c = head.charCodeAt(0);
+    if (c >= 97 && c <= 122) {
+      return c - 97 + 2;
+    }
+    if (c >= 65 && c <= 90) {
+      return 90 - c + 2;
+    }
   } else {
-    throw new Error("invalid order key head: " + head);
+    const i = intDigits.indexOf(head);
+    if (i !== -1) {
+      const half = intDigits.length / 2;
+      return i < half ? half - i + 1 : i - half + 2;
+    }
   }
+  throw new Error("invalid order key head: " + head);
 }
-function getIntegerPart(key) {
-  const integerPartLength = getIntegerLength(key[0]);
+function getIntegerPart(key, intDigits) {
+  const integerPartLength = getIntegerLength(key[0], intDigits);
   if (integerPartLength > key.length) {
     throw new Error("invalid order key: " + key);
   }
   return key.slice(0, integerPartLength);
 }
-function validateOrderKey(key, digits) {
-  if (key === "A" + digits[0].repeat(26)) {
+function validateOrderKey(key, digits, intDigits) {
+  if (isSmallestInteger(key, digits, intDigits)) {
     throw new Error("invalid order key: " + key);
   }
-  const i = getIntegerPart(key);
+  const i = getIntegerPart(key, intDigits);
   const f = key.slice(i.length);
   if (f.slice(-1) === digits[0]) {
     throw new Error("invalid order key: " + key);
   }
 }
-function incrementInteger(x, digits) {
-  validateInteger(x);
-  const [head, ...digs] = x.split("");
-  let carry = true;
-  for (let i = digs.length - 1; carry && i >= 0; i--) {
-    const d = digits.indexOf(digs[i]) + 1;
+function incrementInteger(x, digits, lookup, intDigits) {
+  validateInteger(x, intDigits);
+  const head = x[0];
+  const zero = digits[0];
+  let trailing = "";
+  for (let i = x.length - 1; i >= 1; i--) {
+    const d = (
+      /** @type {number} */
+      lookup[x.charCodeAt(i)] + 1
+    );
     if (d === digits.length) {
-      digs[i] = digits[0];
+      trailing = zero + trailing;
     } else {
-      digs[i] = digits[d];
-      carry = false;
+      return head + x.slice(1, i) + digits[d] + trailing;
     }
   }
-  if (carry) {
+  if (intDigits === void 0) {
     if (head === "Z") {
-      return "a" + digits[0];
+      return "a" + zero;
     }
     if (head === "z") {
       return null;
     }
-    const h = String.fromCharCode(head.charCodeAt(0) + 1);
-    if (h > "a") {
-      digs.push(digits[0]);
-    } else {
-      digs.pop();
-    }
-    return h + digs.join("");
-  } else {
-    return head + digs.join("");
+    const h2 = String.fromCharCode(head.charCodeAt(0) + 1);
+    return h2 + (h2 > "a" ? trailing + zero : trailing.slice(1));
   }
+  const headIndex = intDigits.indexOf(head);
+  if (headIndex === intDigits.length - 1) {
+    return null;
+  }
+  const h = intDigits[headIndex + 1];
+  const lengthDelta = getIntegerLength(h, intDigits) - getIntegerLength(head, intDigits);
+  return h + (lengthDelta > 0 ? trailing + zero : lengthDelta < 0 ? trailing.slice(1) : trailing);
 }
-function decrementInteger(x, digits) {
-  validateInteger(x);
-  const [head, ...digs] = x.split("");
-  let borrow = true;
-  for (let i = digs.length - 1; borrow && i >= 0; i--) {
-    const d = digits.indexOf(digs[i]) - 1;
+function decrementInteger(x, digits, lookup, intDigits) {
+  validateInteger(x, intDigits);
+  const head = x[0];
+  const last = digits[digits.length - 1];
+  let trailing = "";
+  for (let i = x.length - 1; i >= 1; i--) {
+    const d = (
+      /** @type {number} */
+      lookup[x.charCodeAt(i)] - 1
+    );
     if (d === -1) {
-      digs[i] = digits.slice(-1);
+      trailing = last + trailing;
     } else {
-      digs[i] = digits[d];
-      borrow = false;
+      return head + x.slice(1, i) + digits[d] + trailing;
     }
   }
-  if (borrow) {
+  if (intDigits === void 0) {
     if (head === "a") {
-      return "Z" + digits.slice(-1);
+      return "Z" + last;
     }
     if (head === "A") {
       return null;
     }
-    const h = String.fromCharCode(head.charCodeAt(0) - 1);
-    if (h < "Z") {
-      digs.push(digits.slice(-1));
-    } else {
-      digs.pop();
-    }
-    return h + digs.join("");
-  } else {
-    return head + digs.join("");
+    const h2 = String.fromCharCode(head.charCodeAt(0) - 1);
+    return h2 + (h2 < "Z" ? trailing + last : trailing.slice(1));
   }
+  const headIndex = intDigits.indexOf(head);
+  if (headIndex === 0) {
+    return null;
+  }
+  const h = intDigits[headIndex - 1];
+  const lengthDelta = getIntegerLength(h, intDigits) - getIntegerLength(head, intDigits);
+  return h + (lengthDelta > 0 ? trailing + last : lengthDelta < 0 ? trailing.slice(1) : trailing);
 }
-function generateKeyBetween(a, b, digits = BASE_62_DIGITS) {
+var repeatedKeysCache = /* @__PURE__ */ new Map();
+function isSmallestInteger(key, digits, intDigits = "") {
+  let byDigit = repeatedKeysCache.get(intDigits);
+  if (byDigit === void 0) {
+    byDigit = /* @__PURE__ */ new Map();
+    repeatedKeysCache.set(intDigits, byDigit);
+  }
+  const zeroCode = digits.charCodeAt(0);
+  let cached = byDigit.get(zeroCode);
+  if (cached === void 0) {
+    cached = intDigits === "" ? "A" + digits[0].repeat(26) : intDigits[0] + digits[0].repeat(intDigits.length / 2);
+    byDigit.set(zeroCode, cached);
+  }
+  return key === cached;
+}
+function isStrictlyAscending(s) {
+  for (let i = 1; i < s.length; i++) {
+    if (s.charCodeAt(i - 1) >= s.charCodeAt(i)) {
+      return false;
+    }
+  }
+  return true;
+}
+function isSingleByte(s) {
+  for (let i = 0; i < s.length; i++) {
+    if (s.charCodeAt(i) > 255) {
+      return false;
+    }
+  }
+  return true;
+}
+var validatedDigits = /* @__PURE__ */ new Set();
+function validateDigits(digits) {
+  if (validatedDigits.has(digits)) {
+    return;
+  }
+  if (digits.length < 2 || !isStrictlyAscending(digits)) {
+    throw new Error(
+      "digits must be at least 2 characters in strictly ascending character code order: " + digits
+    );
+  }
+  if (!isSingleByte(digits)) {
+    throw new Error("digits must be single-byte (char code 0-255): " + digits);
+  }
+  validatedDigits.add(digits);
+}
+var validatedIntDigits = /* @__PURE__ */ new Set();
+function validateIntDigits(intDigits) {
+  if (validatedIntDigits.has(intDigits)) {
+    return;
+  }
+  if (intDigits.length < 2 || intDigits.length % 2 !== 0 || !isStrictlyAscending(intDigits)) {
+    throw new Error(
+      "intDigits must be an even number of at least 2 characters in strictly ascending character code order: " + intDigits
+    );
+  }
+  if (!isSingleByte(intDigits)) {
+    throw new Error(
+      "intDigits must be single-byte (char code 0-255): " + intDigits
+    );
+  }
+  validatedIntDigits.add(intDigits);
+}
+function generateKeyBetween(a, b, digits = BASE_62_DIGITS, intDigits = void 0) {
+  validateDigits(digits);
+  if (intDigits !== void 0) {
+    validateIntDigits(intDigits);
+  }
+  const lookup = getDigitIndex(digits);
   if (a != null) {
-    validateOrderKey(a, digits);
+    validateOrderKey(a, digits, intDigits);
   }
   if (b != null) {
-    validateOrderKey(b, digits);
+    validateOrderKey(b, digits, intDigits);
   }
-  if (a != null && b != null && a >= b) {
-    throw new Error(a + " >= " + b);
+  if (a != null && b != null) {
+    if (a > b) {
+      const temp = a;
+      a = b;
+      b = temp;
+    }
   }
   if (a == null) {
     if (b == null) {
-      return "a" + digits[0];
+      const head = intDigits === void 0 ? "a" : intDigits[intDigits.length / 2];
+      return head + digits[0];
     }
-    const ib2 = getIntegerPart(b);
+    const ib2 = getIntegerPart(b, intDigits);
     const fb2 = b.slice(ib2.length);
-    if (ib2 === "A" + digits[0].repeat(26)) {
-      return ib2 + midpoint("", fb2, digits);
+    if (isSmallestInteger(ib2, digits, intDigits)) {
+      return ib2 + midpoint("", fb2, digits, lookup);
     }
     if (ib2 < b) {
       return ib2;
     }
-    const res = decrementInteger(ib2, digits);
+    const res = decrementInteger(ib2, digits, lookup, intDigits);
     if (res == null) {
       throw new Error("cannot decrement any more");
     }
     return res;
   }
   if (b == null) {
-    const ia2 = getIntegerPart(a);
+    const ia2 = getIntegerPart(a, intDigits);
     const fa2 = a.slice(ia2.length);
-    const i2 = incrementInteger(ia2, digits);
-    return i2 == null ? ia2 + midpoint(fa2, null, digits) : i2;
+    const i2 = incrementInteger(ia2, digits, lookup, intDigits);
+    return i2 == null ? ia2 + midpoint(fa2, null, digits, lookup) : i2;
   }
-  const ia = getIntegerPart(a);
+  const ia = getIntegerPart(a, intDigits);
   const fa = a.slice(ia.length);
-  const ib = getIntegerPart(b);
+  const ib = getIntegerPart(b, intDigits);
   const fb = b.slice(ib.length);
   if (ia === ib) {
-    return ia + midpoint(fa, fb, digits);
+    return ia + midpoint(fa, fb, digits, lookup);
   }
-  const i = incrementInteger(ia, digits);
+  const i = incrementInteger(ia, digits, lookup, intDigits);
   if (i == null) {
     throw new Error("cannot increment any more");
   }
   if (i < b) {
     return i;
   }
-  return ia + midpoint(fa, null, digits);
+  return ia + midpoint(fa, null, digits, lookup);
 }
 
 // server/src/agent-write.ts

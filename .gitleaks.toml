@@ -1,0 +1,6 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Excalidraw's public Firebase web config, shipped inside @excalidraw/excalidraw and bundled into runtime/web"
+regexes = ['''AIzaSyAd15pYlMci_xIp9ko6wkEsDzAAA0Dn0RU''']
