@@ -18,12 +18,12 @@ From the project root:
 npx skills add khacquynhdevops/excalidraw-live -a claude-code --copy
 ```
 
-Then start `claude` and run `/setup-excalidraw-live-multiagent`. The first time, it asks whether to add an unread-count status line and which role agents to install (Scrum core `po`, `dev`, `tester`; all five; or none). It registers the MCP server in `.mcp.json`, creates `docs/diagrams/`, adds two `.gitignore` lines and starts the canvas server. Your existing files are kept.
+Then start `claude` and run `/setup-excalidraw-live-multiagent`. The first time, it asks whether to add an unread-count status line and which role agents to install (Scrum core `po-diagram`, `dev-diagram`, `tester-diagram`; all five; or none). Each agent draws the diagrams of one role and opens boards as that role (`po-diagram` as `po`). It registers the MCP server in `.mcp.json`, creates `docs/diagrams/`, adds two `.gitignore` lines and starts the canvas server. Your existing files are kept.
 
 Exit Claude, then start a role from the project root:
 
 ```sh
-claude --agent po          # or any role agent you installed; plain `claude` works too
+claude --agent po-diagram  # or any role agent you installed; plain `claude` works too
 ```
 
 Approve the `excalidraw-live` MCP server when asked, and open the board URL the agent gives you.
@@ -47,7 +47,7 @@ Turn on the status line during setup and always check it before asking for a cha
 | `/setup-excalidraw-live-multiagent …` | What it does |
 |---|---|
 | (no flag) | Set up, or start the server if it is not running |
-| `--agents dev,tester` | Install more role agents |
+| `--agents devops-diagram,security-diagram` | Install more role agents |
 | `--stop` / `--restart` | Stop or restart the server |
 | `--update` | After `npx skills update`, refresh the installed agents and skills |
 

@@ -1,5 +1,5 @@
 ---
-name: tester
+name: tester-diagram
 description: Tester. Maps the spec and design to tests and evals (test-map, state, decision flows) on excalidraw-live. Use for "how do we know it works" questions, coverage gaps, and answering other roles about test behaviour.
 ---
 

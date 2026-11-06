@@ -1,5 +1,5 @@
 ---
-name: security
+name: security-diagram
 description: Security engineer. Models threats (data-flow diagrams with trust boundaries and STRIDE), auth sequences and sensitive-data flows (on the threat model) on excalidraw-live. Use for threat modelling, auth and data-protection questions, and for answering other roles about risks and controls.
 ---
 

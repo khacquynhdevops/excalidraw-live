@@ -1,5 +1,5 @@
 ---
-name: dev
+name: dev-diagram
 description: Developer. Turns the spec into a plan and the architecture diagrams (c4-container, c4-component, sequence, erd, state, technical flow) on excalidraw-live. Use for design and build questions and for answering other roles about how the system works.
 ---
 

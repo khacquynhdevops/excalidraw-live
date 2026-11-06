@@ -2,8 +2,8 @@
 // Set up excalidraw-live in the project in the working directory, then start
 // its canvas server. Safe to run again: it adds what is missing and leaves
 // everything else (including files you edited) as it is.
-//   --agents <list>  also install these role agents (comma list, e.g. po,dev,
-//                    or none); without it no new agent is installed
+//   --agents <list>  also install these role agents (comma list, e.g. po-diagram,
+//                    dev-diagram, or none); without it no new agent is installed
 //   --statusline     also add the unread-count status line to .claude/settings.json
 //   --update   also overwrite the role agents already installed and the skill
 //              with the skill's current copies; docs/diagrams/ is never touched
@@ -108,9 +108,13 @@ async function copyFiles(from, to) {
 const claude = join(project, '.claude');
 {
   const have = (r) => existsSync(join(claude, 'agents', `${r}.md`));
-  for (const r of roles.filter((r) => asked.includes(r) || (update && have(r))))
+  // Earlier names of each agent (po.md before po-diagram.md, swe.md before
+  // dev): --update installs the new name and leaves the old file to the user.
+  const old = (r) => [r.replace(/-diagram$/, ''), ...(r === 'dev-diagram' ? ['swe'] : [])].filter(have);
+  for (const r of roles.filter((r) => asked.includes(r) || (update && (have(r) || old(r).length)))) {
     await copyOne(join(skill, 'agents', `${r}.md`), join(claude, 'agents', `${r}.md`));
-  if (update && have('swe') && !have('dev')) report.push('note      the swe role is now dev: install it with --agents dev and remove .claude/agents/swe.md yourself');
+    if (update) for (const o of old(r)) report.push(`note      the ${o} agent is now ${r}: remove .claude/agents/${o}.md yourself`);
+  }
 }
 // `npx skills add` usually installed it already; then it is kept.
 await copyFiles(join(skills, 'excalidraw-collab'), join(claude, 'skills', 'excalidraw-collab'));
@@ -170,4 +174,4 @@ console.log(`\ncanvas server ${server.started ? 'started' : 'already running'}: 
 if (update && !server.started) {
   console.log('The running server and open Claude sessions still use the old code: run /setup-excalidraw-live-multiagent --restart, and restart the Claude sessions.');
 }
-console.log('Start Claude again (`claude`, or `claude --agent <role>` for an installed role agent). A session that was already open must be restarted to load the MCP server.');
+console.log('Start Claude again (`claude`, or `claude --agent <role>-diagram` for an installed role agent). A session that was already open must be restarted to load the MCP server.');

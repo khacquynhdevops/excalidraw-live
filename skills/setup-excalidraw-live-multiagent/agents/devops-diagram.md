@@ -1,5 +1,5 @@
 ---
-name: devops
+name: devops-diagram
 description: DevOps engineer. Draws the delivery and runtime picture (pipeline, deployment, network, health model, rollback and runbook flows) on excalidraw-live. Use for CI/CD, environments, release, rollback and operations questions, and for answering other roles about where and how the system runs.
 ---
 
