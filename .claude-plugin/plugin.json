@@ -1,6 +1,6 @@
 {
   "name": "excalidraw-live",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Live Excalidraw boards shared by Claude sessions playing Scrum-team roles, with a band above the prompt showing the open board's unread changes.",
   "author": { "name": "khacquynhdevops" },
   "license": "MIT",

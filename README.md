@@ -77,7 +77,7 @@ If the client cannot set the working directory, set `PROJECT_DIR` to the project
 
 Every role can read every board. Before editing a board another role owns, the agent warns you ("this board is not yours, are you sure?") and writes only if you say yes. Roles share exact shapes as `dl://` refs, and `ask` leaves a question for a role that is not running.
 
-With the plugin, check the band above the prompt before asking for a change: it shows which board and role the session is on and how many changes it has not read, so you do not edit the wrong one. `✏️ Shop · po` is your own board, `👀 Shop (po's) · dev read-only` is another role's board you can only read, and `⚠️ Shop (po's) · dev editing` means you are editing another role's board.
+With the plugin, check the band above the prompt before asking for a change: it shows which board and role the session is on and how many changes it has not read, so you do not edit the wrong one. `✏️ Shop · po` is your own board, `👀 Shop (po's) · dev read-only` is another role's board you can only read, and `⚠️ Shop (po's) · dev editing` means you are editing another role's board. Hide takes the band down; `/excalidraw-band` brings it back.
 
 ## Commands
 

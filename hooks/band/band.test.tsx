@@ -71,12 +71,14 @@ test('another mod in the slot stays below the band', async ($, on) => {
   await ui.unmount()
 })
 
-test('Hide takes the band down', async ($, on) => {
+test('Hide takes the band down and /excalidraw-band brings it back', async ($, on) => {
   stub(on)
   await $.tool.call({ tool: OPEN, id: 'd1', as: 'po' })
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
   await ui.press({ key: 'hide' })
   expect(await ui.find({ type: 'Text', text: /unread/ })).toBeUndefined()
+  expect((await $.command.run({ command: 'excalidraw-band' })).text).toBe('Band shown.')
+  expect(await ui.find({ type: 'Text', text: /unread/ })).toBeDefined()
   await ui.unmount()
 })
 

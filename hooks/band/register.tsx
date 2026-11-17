@@ -54,8 +54,15 @@ export const register: Register = (on) => {
   on('session.start', async ($, e, next) => {
     timer?.cancel()
     timer = $.clock.every(2000, () => void poll($).catch(() => {}))
+    await $.command.register({ name: 'excalidraw-band', description: 'Show or hide the excalidraw-live band' })
     return next(e)
   }).catch(($, e, next) => next(e))
+
+  // Hide has no button to undo it: the band is gone, so a command brings it back.
+  on('command.run', { command: 'excalidraw-band' }, async ($) => {
+    const hidden = await update($, isHidden, (h) => !h)
+    return { text: hidden ? 'Band hidden.' : 'Band shown.' }
+  })
 
   on('tool.call', async ($, e, next) => {
     const r = await next(e)
