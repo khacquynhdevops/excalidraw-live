@@ -22,7 +22,7 @@
 import { spawnSync } from 'node:child_process';
 import { appendFile, copyFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { dirname, isAbsolute, join, relative, sep } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const skill = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -131,7 +131,11 @@ async function addServer(path, keys, entry) {
   const after = structuredClone(before ?? {});
   let at = after;
   for (const k of keys) at = at[k] ??= {};
-  if (!JSON.stringify(at['excalidraw-live'] ?? null).includes(JSON.stringify(mcpPath).slice(1, -1))) at['excalidraw-live'] = entry;
+  const old = at['excalidraw-live'];
+  // Ours when a path in it leads to this server, however it is written.
+  const ours = [old?.args, old?.command].flat()
+    .some((s) => typeof s === 'string' && resolve(project, s.replace('${workspaceFolder}', project)) === mcpEntry);
+  if (!ours) at['excalidraw-live'] = entry;
   await writeJson(path, before, after);
 }
 

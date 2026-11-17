@@ -126,12 +126,19 @@ export class Workspace {
     const entry: DiagramEntry = { id, name, file, kind: input.kind, owner, audience: input.audience ?? [] };
     if (input.refines) entry.refines = input.refines;
 
-    await writeAtomic(join(this.dir, file), serializeScene({ elements: [], appState: {}, files: {} }));
-    // Change logs are local history, not part of the diagram.
-    await writeFile(join(this.dir, '.gitignore'), '*.log.jsonl\n', { flag: 'wx' }).catch((err) => {
-      if (err.code !== 'EEXIST') throw err;
-    });
+    // Listed before the first await, so a create running at the same time
+    // sees the id and file as taken.
     this.entries = [...this.entries, entry];
+    try {
+      await writeAtomic(join(this.dir, file), serializeScene({ elements: [], appState: {}, files: {} }));
+      // Change logs are local history, not part of the diagram.
+      await writeFile(join(this.dir, '.gitignore'), '*.log.jsonl\n', { flag: 'wx' }).catch((err) => {
+        if (err.code !== 'EEXIST') throw err;
+      });
+    } catch (err) {
+      this.entries = this.entries.filter((d) => d !== entry);
+      throw err;
+    }
     await this.saveIndex();
     return entry;
   }
@@ -158,6 +165,10 @@ export class Workspace {
             for (const fn of this.fileListeners) fn(id, store.revision, els, files);
           }));
           return store;
+        }, (err) => {
+          // Let a later open try again, e.g. once the file is fixed.
+          this.stores.delete(id);
+          throw err;
         });
       this.stores.set(id, s);
     }

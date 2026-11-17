@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Workspace } from '../src/workspace.js';
@@ -32,6 +32,26 @@ describe('Workspace', () => {
     expect(a.file).toBe('overview.excalidraw');
     expect(b.file).toBe('overview-2.excalidraw');
     expect(a.id).not.toBe(b.id);
+  });
+
+  it('gives each diagram its own file when two are created at the same time', async () => {
+    const ws = await Workspace.load({ dir });
+    const [a, b] = await Promise.all([
+      ws.create({ name: 'Shop', kind: 'free', owner: 'po' }),
+      ws.create({ name: 'Shop', kind: 'free', owner: 'dev' })
+    ]);
+    expect([a.file, b.file].sort()).toEqual(['shop-2.excalidraw', 'shop.excalidraw']);
+    expect(index()).toHaveLength(2);
+  });
+
+  it('opens a diagram again once its broken file is fixed', async () => {
+    const ws = await Workspace.load({ dir });
+    const d = await ws.create({ name: 'Shop', kind: 'free', owner: 'po' });
+    writeFileSync(join(dir, d.file), '{oops');
+    await expect(ws.store(d.id)).rejects.toThrow();
+    writeFileSync(join(dir, d.file), JSON.stringify({ type: 'excalidraw', elements: [el('a')] }));
+    expect((await ws.store(d.id)).get('a')).toBeDefined();
+    await ws.close();
   });
 
   it('refuses an unknown kind or a missing name/owner', async () => {

@@ -16,6 +16,13 @@ describe('writeAtomic', () => {
     expect(readdirSync(dir)).toEqual(['a.excalidraw']);
   });
 
+  it('survives two writes of the same file at the same time', async () => {
+    const path = join(dir, 'a.json');
+    await Promise.all([writeAtomic(path, 'one'), writeAtomic(path, 'two')]);
+    expect(['one', 'two']).toContain(readFileSync(path, 'utf8'));
+    expect(readdirSync(dir)).toEqual(['a.json']);
+  });
+
   it('replaces an existing file', async () => {
     const path = join(dir, 'a.excalidraw');
     await writeAtomic(path, 'one');

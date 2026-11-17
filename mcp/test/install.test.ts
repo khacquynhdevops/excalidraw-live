@@ -199,12 +199,17 @@ describe('setup-excalidraw-live', () => {
     }, 30_000);
 
     it('replaces only an entry of ours that points elsewhere, and takes several harnesses', async () => {
-      writeFileSync(join(at, '.gemini/settings.json'), JSON.stringify({ mcpServers: { 'excalidraw-live': { command: 'node', args: ['old/mcp.mjs'] } } }));
+      // Another project's copy contains our path but is not it.
+      writeFileSync(join(at, '.gemini/settings.json'), JSON.stringify({ mcpServers: { 'excalidraw-live': { command: 'node', args: [`/old-project/${server}`] } } }));
       writeFileSync(join(at, '.cursor/mcp.json'), JSON.stringify({ mcpServers: { 'excalidraw-live': { command: 'node', args: [`\${workspaceFolder}/${server}`], env: { MINE: '1' } } } }));
-      const out = await run(at, script, '', {}, ['--harness', 'gemini,cursor']);
+      // A full path to this project's server is ours too.
+      const vscode = { 'excalidraw-live': { type: 'stdio', command: 'node', args: [join(at, server)], env: { MINE: '1' } } };
+      writeFileSync(join(at, '.vscode/mcp.json'), JSON.stringify({ servers: vscode }));
+      const out = await run(at, script, '', {}, ['--harness', 'gemini,cursor,vscode']);
       expect(out.code, out.out).toBe(0);
       expect(out.out).toContain('updated   .gemini/settings.json');
       expect(out.out).toContain('unchanged .cursor/mcp.json');
+      expect(JSON.parse(read('.vscode/mcp.json')).servers).toEqual(vscode);
       expect(JSON.parse(read('.gemini/settings.json')).mcpServers['excalidraw-live'].args).toEqual([server]);
       // No Claude Code files on the --harness path.
       expect(existsSync(join(at, '.mcp.json'))).toBe(false);

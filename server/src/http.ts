@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import type { Presence } from '@excalidraw-live/shared';
 import { WorkspaceError, type Workspace } from './workspace.js';
-import { allowedOrigin, attachSync, type SyncRooms } from './ws.js';
+import { allowedHost, allowedOrigin, attachSync, type SyncRooms } from './ws.js';
 import { agentApi } from './agent-api.js';
 import { json, readJson } from './json.js';
 
@@ -34,6 +34,10 @@ export interface CanvasServer {
 
 export async function startServer(opts: ServerOptions): Promise<CanvasServer> {
   const http = createServer(async (req, res) => {
+    if (!allowedHost(req)) {
+      res.writeHead(403).end();
+      return;
+    }
     if (req.url === '/health') {
       json(res, 200, { ok: true, pid: process.pid, diagramsDir: opts.workspace.dir });
       return;

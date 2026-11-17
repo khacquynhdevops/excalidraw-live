@@ -28,6 +28,18 @@ export function allowedOrigin(req: IncomingMessage): boolean {
   }
 }
 
+// DNS rebinding: a page on another site can make its own name point at
+// 127.0.0.1 and read the API as same-origin. Its requests still carry its
+// name in Host, so only local names are served.
+export function allowedHost(req: IncomingMessage): boolean {
+  try {
+    const host = new URL(`http://${req.headers.host ?? ''}`).hostname;
+    return host === '127.0.0.1' || host === 'localhost';
+  } catch {
+    return false;
+  }
+}
+
 export interface SyncRooms {
   presence(diagramId: string): Map<string, Presence> | undefined;
   // Send to every client viewing the diagram.
@@ -52,7 +64,7 @@ export function attachSync(http: Server, workspace: Workspace): SyncRooms {
       socket.destroy();
     };
     const id = diagramIdOf(req.url);
-    if (!id || !workspace.get(id) || !allowedOrigin(req)) return refuse('403 Forbidden');
+    if (!id || !workspace.get(id) || !allowedOrigin(req) || !allowedHost(req)) return refuse('403 Forbidden');
     let store: SceneStore;
     try {
       store = await workspace.store(id);
@@ -111,7 +123,8 @@ function wellFormed(msg: unknown): msg is ClientMsg {
   const m = msg as Record<string, unknown>;
   if (typeof m.clientId !== 'string') return false;
   if (m.t !== 'client_patch') return true;
-  if (!Array.isArray(m.elements) || !m.elements.every((e) => typeof e === 'object' && e !== null)) return false;
+  if (!Array.isArray(m.elements) || !m.elements.every((e) => typeof e === 'object' && e !== null &&
+    typeof e.id === 'string' && typeof e.version === 'number' && typeof e.versionNonce === 'number')) return false;
   if (m.files === undefined) return true;
   return typeof m.files === 'object' && m.files !== null &&
     Object.values(m.files).every((f) => typeof f === 'object' && f !== null && typeof (f as { dataURL?: unknown }).dataURL === 'string');

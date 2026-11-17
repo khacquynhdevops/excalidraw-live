@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
+import { request } from 'node:http';
 import WebSocket from 'ws';
 import type { ClientMsg, ServerMsg } from '@excalidraw-live/shared';
 import type { DiagramEntry } from '@excalidraw-live/shared';
@@ -178,10 +179,12 @@ describe('canvas WebSocket', () => {
     const a = new Client(url, 'A');
     await a.next('scene_init');
     for (const bad of ['null', '42', '{"t":"client_patch","clientId":"A"}',
-      JSON.stringify({ t: 'client_patch', clientId: 'A', elements: [], files: { f: {} } })]) a.ws.send(bad);
+      JSON.stringify({ t: 'client_patch', clientId: 'A', elements: [], files: { f: {} } }),
+      JSON.stringify({ t: 'client_patch', clientId: 'A', elements: [{ type: 'rectangle', version: 1, versionNonce: 1 }] }),
+      JSON.stringify({ t: 'client_patch', clientId: 'A', elements: [{ ...el('str'), version: '9' }] })]) a.ws.send(bad);
     a.send({ elements: [el('ok')] });
     await sleep(100);
-    expect(store.get('ok')).toBeDefined();
+    expect(store.all().map((e) => e.id)).toEqual(['ok']);
     a.ws.close();
   });
 });
@@ -224,6 +227,19 @@ describe('diagrams API', () => {
     const res = await api('/api/diagrams', { method: 'POST', body: JSON.stringify({ name: 'x', kind: 'nope', owner: 'po' }) });
     expect(res.status).toBe(400);
     expect((await api('/api/diagrams', { method: 'POST', body: '{oops' })).status).toBe(400);
+  });
+
+  it('refuses every request whose Host is not local (DNS rebinding)', async () => {
+    const [host, port] = base.split(':');
+    const status = (p: string, hostHeader: string) => new Promise<number>((resolve, reject) => {
+      request({ host, port, path: p, headers: { host: hostHeader } }, (res) => { res.resume(); resolve(res.statusCode!); })
+        .on('error', reject).end();
+    });
+    expect(await status('/api/diagrams', `evil.example:${port}`)).toBe(403);
+    expect(await status('/health', 'evil.example')).toBe(403);
+    expect(await status('/api/diagrams', `localhost:${port}`)).toBe(200);
+    const c = new WebSocket(url, { headers: { host: `evil.example:${port}` } });
+    await expect(new Promise((r, j) => { c.on('open', r); c.on('error', j); })).rejects.toThrow();
   });
 
   it('refuses writes from other web origins', async () => {

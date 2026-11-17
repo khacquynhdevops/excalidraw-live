@@ -4149,7 +4149,7 @@ function layoutIssues(elements, ids) {
 }
 
 // server/src/file-io.ts
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdir, open, readFile, rename, unlink } from "node:fs/promises";
 import { basename, dirname, join as join2 } from "node:path";
 function serializeScene(scene) {
@@ -4178,7 +4178,7 @@ function hashContent(content) {
 }
 async function writeAtomic(path, content) {
   await mkdir(dirname(path), { recursive: true });
-  const tmp = join2(dirname(path), `.${basename(path)}.${process.pid}.${Date.now()}.tmp`);
+  const tmp = join2(dirname(path), `.${basename(path)}.${process.pid}.${randomUUID()}.tmp`);
   const fh = await open(tmp, "w");
   try {
     await fh.writeFile(content, "utf8");
@@ -6249,11 +6249,16 @@ var Workspace = class _Workspace {
     for (let n = 2; taken.has(file); n++) file = `${stem}-${n}.excalidraw`;
     const entry = { id, name, file, kind: input.kind, owner, audience: input.audience ?? [] };
     if (input.refines) entry.refines = input.refines;
-    await writeAtomic(join5(this.dir, file), serializeScene({ elements: [], appState: {}, files: {} }));
-    await writeFile(join5(this.dir, ".gitignore"), "*.log.jsonl\n", { flag: "wx" }).catch((err) => {
-      if (err.code !== "EEXIST") throw err;
-    });
     this.entries = [...this.entries, entry];
+    try {
+      await writeAtomic(join5(this.dir, file), serializeScene({ elements: [], appState: {}, files: {} }));
+      await writeFile(join5(this.dir, ".gitignore"), "*.log.jsonl\n", { flag: "wx" }).catch((err) => {
+        if (err.code !== "EEXIST") throw err;
+      });
+    } catch (err) {
+      this.entries = this.entries.filter((d) => d !== entry);
+      throw err;
+    }
     await this.saveIndex();
     return entry;
   }
@@ -6277,6 +6282,9 @@ var Workspace = class _Workspace {
           for (const fn of this.fileListeners) fn(id, store.revision, els, files);
         }));
         return store;
+      }, (err) => {
+        this.stores.delete(id);
+        throw err;
       });
       this.stores.set(id, s);
     }
@@ -6398,6 +6406,14 @@ function allowedOrigin(req) {
     return false;
   }
 }
+function allowedHost(req) {
+  try {
+    const host2 = new URL(`http://${req.headers.host ?? ""}`).hostname;
+    return host2 === "127.0.0.1" || host2 === "localhost";
+  } catch {
+    return false;
+  }
+}
 function attachSync(http, workspace2) {
   const rooms = /* @__PURE__ */ new Map();
   http.on("upgrade", async (req, socket, head) => {
@@ -6408,7 +6424,7 @@ function attachSync(http, workspace2) {
       socket.destroy();
     };
     const id = diagramIdOf(req.url);
-    if (!id || !workspace2.get(id) || !allowedOrigin(req)) return refuse("403 Forbidden");
+    if (!id || !workspace2.get(id) || !allowedOrigin(req) || !allowedHost(req)) return refuse("403 Forbidden");
     let store;
     try {
       store = await workspace2.store(id);
@@ -6457,7 +6473,7 @@ function wellFormed(msg) {
   const m = msg;
   if (typeof m.clientId !== "string") return false;
   if (m.t !== "client_patch") return true;
-  if (!Array.isArray(m.elements) || !m.elements.every((e) => typeof e === "object" && e !== null)) return false;
+  if (!Array.isArray(m.elements) || !m.elements.every((e) => typeof e === "object" && e !== null && typeof e.id === "string" && typeof e.version === "number" && typeof e.versionNonce === "number")) return false;
   if (m.files === void 0) return true;
   return typeof m.files === "object" && m.files !== null && Object.values(m.files).every((f) => typeof f === "object" && f !== null && typeof f.dataURL === "string");
 }
@@ -7294,6 +7310,10 @@ var MIME = {
 };
 async function startServer(opts) {
   const http = createServer(async (req, res) => {
+    if (!allowedHost(req)) {
+      res.writeHead(403).end();
+      return;
+    }
     if (req.url === "/health") {
       json(res, 200, { ok: true, pid: process.pid, diagramsDir: opts.workspace.dir });
       return;
