@@ -12,38 +12,69 @@ Credits: the sync and change-log ideas build on [yctimlin/mcp_excalidraw](https:
 
 ## Install
 
+Pick one path:
+
+- **Claude Code plugin** (recommended): MCP server, skills, and the band above the prompt.
+- **Other harnesses** (Codex, Cursor, Gemini CLI, VS Code Copilot, opencode), or Claude Code without the plugin: MCP server and skills, no band.
+
+Either way, the setup step runs **once per project**. Nothing works until it has run: it starts the canvas server the board tools talk to.
+
 ### Claude Code plugin
 
-From the project root:
+**1. Add the marketplace** (once per machine):
 
 ```sh
 claude plugin marketplace add khacquynhdevops/excalidraw-live
-claude plugin install excalidraw-live@excalidraw-live -s local    # only you, in this project
-claude plugin install excalidraw-live@excalidraw-live -s project  # everyone, through .claude/settings.json
 ```
 
-The plugin is on only in the projects you install it in. It brings the MCP server, the skills and a band above the prompt showing the open board's unread changes.
+**2. Install the plugin in your project.** From the project root, run **one** of these:
 
-Then start `claude` and run `/excalidraw-live:setup-excalidraw-live`. The first time, it asks whether to install role agents: none (the default), Scrum core (`po-diagram`, `dev-diagram`, `tester-diagram`), or the full team of five. Each agent draws the diagrams of one role and opens boards as that role (`po-diagram` as `po`). It creates `docs/diagrams/`, adds two `.gitignore` lines and starts the canvas server. Your existing files are kept.
+| Who should get it | Command |
+|---|---|
+| Only you, in this project | `claude plugin install excalidraw-live@excalidraw-live -s local` |
+| Everyone who clones the project (written to `.claude/settings.json`, commit it) | `claude plugin install excalidraw-live@excalidraw-live -s project` |
 
-Exit Claude, then start a role from the project root:
+Not sure? Use `-s local`. The plugin is on only in the projects you install it in.
+
+**3. Run setup** (once per project). Start `claude` in the project root and type:
+
+```text
+/excalidraw-live:setup-excalidraw-live
+```
+
+It creates `docs/diagrams/`, adds two `.gitignore` lines and starts the canvas server. Your existing files are kept. The first time, it asks whether to install role agents:
+
+- none (the default): use plain `claude`;
+- Scrum core: `po-diagram`, `dev-diagram`, `tester-diagram`;
+- full team: those three plus `devops-diagram`, `security-diagram`.
+
+Each role agent draws one role's diagrams and opens boards as that role (`po-diagram` as `po`).
+
+**4. Restart Claude and start drawing.** Exit Claude so it loads the new agents, then from the project root:
 
 ```sh
-claude --agent po-diagram  # or any role agent you installed; plain `claude` works too
+claude --agent po-diagram   # any role agent you installed, or plain `claude`
 ```
 
-Open the board URL the agent gives you, or press Open on the band.
+Ask for a diagram. Open the board URL the agent gives you, or press **Open** on the band.
+
+To update later: `/plugin update`, then restart Claude.
 
 ### Other agent harnesses
 
-The skills also install without the plugin, for Claude Code or another harness, but without the band. From the project root:
+**1. Add the skills** from the project root:
 
 ```sh
 npx skills add khacquynhdevops/excalidraw-live
-node .agents/skills/setup-excalidraw-live/scripts/setup.mjs --harness codex   # use the path npx printed
 ```
 
-`--harness` takes `codex`, `cursor`, `gemini`, `vscode` (Copilot) or `opencode`, as a comma list or repeated, and writes the `excalidraw-live` MCP server into that harness's project config:
+**2. Run setup** (once per project), with the path `npx` printed and your harness:
+
+```sh
+node .agents/skills/setup-excalidraw-live/scripts/setup.mjs --harness codex
+```
+
+`--harness` takes `codex`, `cursor`, `gemini`, `vscode` (Copilot) or `opencode`, as a comma list or repeated. It writes the `excalidraw-live` MCP server into that harness's project config and keeps the other servers there:
 
 | Harness | File |
 |---|---|
@@ -53,17 +84,17 @@ node .agents/skills/setup-excalidraw-live/scripts/setup.mjs --harness codex   # 
 | `vscode` | `.vscode/mcp.json` |
 | `opencode` | `opencode.json` |
 
-Other servers in those files are kept. Restart the harness so it loads the server. The role agents (`--agents`) are for Claude Code only.
+**3. Restart the harness** so it loads the server.
 
-In Claude Code, run `/setup-excalidraw-live` instead: it registers the server in `.mcp.json` and copies the `excalidraw-collab` skill into `.claude/skills/`. Approve the `excalidraw-live` MCP server when Claude asks.
+**Claude Code without the plugin:** after step 1, start `claude` and run `/setup-excalidraw-live` instead of step 2. It registers the server in `.mcp.json` and copies the `excalidraw-collab` skill into `.claude/skills/`. Approve the `excalidraw-live` MCP server when Claude asks. Role agents (`--agents`) are for Claude Code only.
 
-Any other MCP client: register a stdio server that runs, from the project root,
+**Any other MCP client:** register a stdio server that runs, from the project root,
 
 ```sh
 node <skills folder>/setup-excalidraw-live/runtime/mcp.mjs
 ```
 
-If the client cannot set the working directory, set `PROJECT_DIR` to the project root instead. Run `setup.mjs` once without `--harness` flags for that client to create `docs/diagrams/` and start the canvas server (it also writes `.mcp.json`, which other clients ignore).
+If the client cannot set the working directory, set `PROJECT_DIR` to the project root instead. Run `setup.mjs` once without `--harness` to create `docs/diagrams/` and start the canvas server (it also writes `.mcp.json`, which other clients ignore).
 
 ## Roles
 
