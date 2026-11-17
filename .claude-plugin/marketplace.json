@@ -1,0 +1,13 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "excalidraw-live",
+  "owner": { "name": "khacquynhdevops" },
+  "plugins": [
+    {
+      "name": "excalidraw-live",
+      "description": "Live Excalidraw boards shared by Claude sessions playing Scrum-team roles.",
+      "source": "./",
+      "category": "productivity"
+    }
+  ]
+}

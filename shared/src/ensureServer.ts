@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // One canvas server per project. While it runs it records itself in
-// <projectDir>/.claude/skills/setup-excalidraw-live/state/server.json.
+// <projectDir>/.claude/excalidraw-live/state/server.json.
 export interface ServerState {
   port: number;
   pid: number;
@@ -26,10 +26,10 @@ export interface EnsureOptions {
   timeoutMs?: number;
 }
 
-// Runtime state stays inside the setup skill, so the only thing the tool adds
-// outside .claude/ is the drawings. `npx skills update` replaces the skill
-// folder, state included: stop the server first.
-const STATE_DIR = join('.claude', 'skills', 'setup-excalidraw-live', 'state');
+// Runtime state stays under .claude/, so the only thing the tool adds outside
+// it is the drawings. It sits outside the skill folder, which a plugin
+// install does not have and `npx skills update` replaces.
+const STATE_DIR = join('.claude', 'excalidraw-live', 'state');
 const LOCK_STALE_MS = 15_000;
 
 export const stateDir = (projectDir: string) => join(projectDir, STATE_DIR);

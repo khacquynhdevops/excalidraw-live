@@ -11,7 +11,7 @@ The board is a shared whiteboard the user draws on in the browser while you work
 
 Read the board only when the user's request is about it.
 
-- The user sees the unread count in the status line; you do not. When they say they changed the board or ask about it, call `get_changes_since`.
+- The user may see the unread count in a band above the prompt; you do not. When they say they changed the board or ask about it, call `get_changes_since`.
 - Use `wait_for_changes` only when the user asks you to watch the board ("watch while I draw", "tell me when I am done"). After a `timeout`, ask the user whether to keep watching. Never loop on your own.
 - `get_changes_since` without `since` marks the changes read. Use it once per question, not as a probe.
 

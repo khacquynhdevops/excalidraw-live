@@ -8,7 +8,6 @@ import { createBoardServer } from './tools.js';
 const board = createBoardServer({
   projectDir: process.env.PROJECT_DIR || process.cwd(),
   sessionId: `mcp-${process.pid}`,
-  claudePid: process.ppid,
   diagramId: process.env.DIAGRAM_ID || undefined,
   as: process.env.DIAGRAM_AS || undefined
 });

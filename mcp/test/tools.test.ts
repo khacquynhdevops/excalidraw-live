@@ -55,7 +55,7 @@ describe('reading without a server', () => {
   let call: Awaited<ReturnType<typeof connect>>['call'];
   beforeAll(async () => {
     dir = project();
-    ({ call } = await connect({ projectDir: dir, sessionId: 'mcp-test-a', claudePid: 1 }));
+    ({ call } = await connect({ projectDir: dir, sessionId: 'mcp-test-a' }));
   });
 
   it('lists diagrams with their revision, filtered by kind or audience', async () => {
@@ -119,8 +119,8 @@ describe('a bound session', () => {
 
   beforeAll(async () => {
     dir = project();
-    po = await connect({ projectDir: dir, sessionId: 'mcp-test-po', claudePid: 111 });
-    dev = await connect({ projectDir: dir, sessionId: 'mcp-test-dev', claudePid: 222 });
+    po = await connect({ projectDir: dir, sessionId: 'mcp-test-po' });
+    dev = await connect({ projectDir: dir, sessionId: 'mcp-test-dev' });
   }, 30_000);
   afterAll(async () => {
     const s = await findServer(dir);
@@ -139,8 +139,6 @@ describe('a bound session', () => {
     expect(r.text).toContain('overview: draw it as an expert in impact mapping');
     expect((await po.call('read_diagram')).text).toMatch(/^board "Overview"/);
     url = (await findServer(dir))!.url;
-    expect(JSON.parse(readFileSync(join(dir, '.claude', 'skills', 'setup-excalidraw-live', 'state', 'sessions', '111.json'), 'utf8')))
-      .toEqual({ diagramId: 'd_over', as: 'po', mode: 'writer', session: 'mcp-test-po' });
   });
 
   it('opens read-only for any other role', async () => {
@@ -238,7 +236,7 @@ describe('a bound session', () => {
     const id = /^asked po: (q_[0-9a-f]+)/.exec(q.text)![1];
     expect(await dev.call('ask', { ref: 'dl://d_nope', toRole: 'po', text: 'x' })).toMatchObject({ isError: true, text: 'unknown diagram: d_nope' });
 
-    const po2 = await connect({ projectDir: dir, sessionId: 'mcp-test-po3', claudePid: 444 });
+    const po2 = await connect({ projectDir: dir, sessionId: 'mcp-test-po3' });
     const opened = (await po2.call('open_diagram', { id: 'd_over', as: 'po' })).text;
     expect(opened).toContain(`question ${id} from dev: "Does checkout need login?" · dl://d_over@8#checkout`);
     expect(await po2.call('answer', { questionId: id, text: 'Guests too', ref: 'dl://d_over#checkout' })).toMatchObject({ isError: false, text: `answered ${id}` });
@@ -266,10 +264,9 @@ describe('a bound session', () => {
     expect((await po.call('get_scene_summary')).text).toMatch(/\nlayout issues:\n(- .*\n)*- rectangle \[o1\] overlaps rectangle \[o2\]/);
   });
 
-  it('releases the lease and its session file on close', async () => {
+  it('releases the lease on close', async () => {
     await po.board.close();
-    expect(existsSync(join(dir, '.claude', 'skills', 'setup-excalidraw-live', 'state', 'sessions', '111.json'))).toBe(false);
-    const again = await connect({ projectDir: dir, sessionId: 'mcp-test-po2', claudePid: 333 });
+    const again = await connect({ projectDir: dir, sessionId: 'mcp-test-po2' });
     expect((await again.call('open_diagram', { id: 'd_over', as: 'po' })).text).toMatch(/\(writer\)/);
   });
 });

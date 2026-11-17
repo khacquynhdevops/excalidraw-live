@@ -1,0 +1,16 @@
+{
+  "name": "excalidraw-live",
+  "version": "0.1.0",
+  "description": "Live Excalidraw boards shared by Claude sessions playing Scrum-team roles, with a band above the prompt showing the open board's unread changes.",
+  "author": { "name": "khacquynhdevops" },
+  "license": "MIT",
+  "skills": "./skills/",
+  "mcpServers": {
+    "excalidraw-live": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/skills/setup-excalidraw-live/runtime/mcp.mjs"]
+    }
+  },
+  "hooks": "./hooks/band.json",
+  "types": "./hooks/band/types.d.ts"
+}

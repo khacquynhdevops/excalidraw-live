@@ -5,5 +5,5 @@ dist/
 .claude/
 *.log.jsonl
 .DS_Store
-skills/*/state/
+.claude-plugin/types/
 reference-repos/

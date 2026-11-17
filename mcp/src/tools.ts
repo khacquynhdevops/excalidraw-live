@@ -2,7 +2,7 @@
 // the project's canvas server over HTTP. Reading other diagrams works from
 // the files alone, so it does not start the server; everything that binds,
 // writes or follows live changes does.
-import { mkdir, readFile, stat, unlink, writeFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
@@ -10,7 +10,7 @@ import {
   DIAGRAM_KINDS, alive, formatRef, labelOf, layoutIssues, parseRef, summarizeScene,
   type DiagramEntry, type SceneEl
 } from '@excalidraw-live/shared';
-import { diagramsDir, ensureServer, findServer, stateDir } from '@excalidraw-live/shared/ensureServer';
+import { diagramsDir, ensureServer, findServer } from '@excalidraw-live/shared/ensureServer';
 import { answerQuestion, askQuestion, inboxFor, markSeen } from '@excalidraw-live/shared/questions';
 import { checkConsistency, linkRef } from './consistency.js';
 import { conventionLine } from './conventions.js';
@@ -20,8 +20,6 @@ export interface BoardServerOptions {
   // Identifies this session to the canvas server; `mcp-<pid>` lets the server
   // take back the writer lease if this process dies.
   sessionId: string;
-  // The Claude Code process, so the status line can find this session's board.
-  claudePid: number;
   serverEntry?: string;
   // Bind to this diagram on first use instead of waiting for open_diagram.
   diagramId?: string;
@@ -41,7 +39,6 @@ type Text = { content: { type: 'text'; text: string }[]; isError?: boolean };
 
 export function createBoardServer(opts: BoardServerOptions) {
   const dir = diagramsDir(opts.projectDir);
-  const sessionFile = join(stateDir(opts.projectDir), 'sessions', `${opts.claudePid}.json`);
   let binding: Binding | null = null;
 
   // ---- files ------------------------------------------------------------
@@ -135,8 +132,6 @@ export function createBoardServer(opts: BoardServerOptions) {
     const url = await server();
     const b = await bindOn(url, { diagramId: id, as, edit }, takeover);
     binding = { diagramId: id, as, edit };
-    await mkdir(join(sessionFile, '..'), { recursive: true });
-    await writeFile(sessionFile, JSON.stringify({ diagramId: id, as, mode: b.mode, session: opts.sessionId }) + '\n');
 
     // Another session holding the lease is worth naming. Another role's board
     // is read-only until the user confirms editing it.
@@ -418,13 +413,12 @@ export function createBoardServer(opts: BoardServerOptions) {
 
   return {
     server: mcp,
-    // Give back the writer lease and the status line's session file. Does not
+    // Give back the writer lease. Does not
     // start a server just to say goodbye.
     async close() {
       await mcp.close();
       if (!binding) return;
       binding = null;
-      await unlink(sessionFile).catch(() => {});
       const live = await findServer(opts.projectDir);
       if (live) await request(live.url, 'DELETE', `/api/sessions/${encodeURIComponent(opts.sessionId)}`).catch(() => {});
     }

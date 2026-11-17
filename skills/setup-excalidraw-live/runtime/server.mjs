@@ -3742,7 +3742,7 @@ import { fileURLToPath } from "node:url";
 
 // shared/dist/ensureServer.js
 import { join } from "node:path";
-var STATE_DIR = join(".claude", "skills", "setup-excalidraw-live", "state");
+var STATE_DIR = join(".claude", "excalidraw-live", "state");
 var stateDir = (projectDir2) => join(projectDir2, STATE_DIR);
 var statePath = (projectDir2) => join(stateDir(projectDir2), "server.json");
 var diagramsDir = (projectDir2) => join(projectDir2, "docs", "diagrams");

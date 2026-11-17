@@ -28612,7 +28612,7 @@ var StdioServerTransport = class {
 };
 
 // mcp/src/tools.ts
-import { mkdir as mkdir2, readFile as readFile3, stat as stat2, unlink as unlink2, writeFile } from "node:fs/promises";
+import { readFile as readFile3, stat as stat2 } from "node:fs/promises";
 import { join as join3 } from "node:path";
 
 // node_modules/zod/v3/helpers/util.js
@@ -36938,7 +36938,7 @@ import { spawn } from "node:child_process";
 import { mkdir, open as open2, readFile, stat, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-var STATE_DIR = join(".claude", "skills", "setup-excalidraw-live", "state");
+var STATE_DIR = join(".claude", "excalidraw-live", "state");
 var LOCK_STALE_MS = 15e3;
 var stateDir = (projectDir) => join(projectDir, STATE_DIR);
 var statePath = (projectDir) => join(stateDir(projectDir), "server.json");
@@ -37287,7 +37287,6 @@ var ToolError = class extends Error {
 };
 function createBoardServer(opts) {
   const dir = diagramsDir(opts.projectDir);
-  const sessionFile = join3(stateDir(opts.projectDir), "sessions", `${opts.claudePid}.json`);
   let binding = null;
   async function index() {
     try {
@@ -37362,8 +37361,6 @@ function createBoardServer(opts) {
     const url2 = await server();
     const b = await bindOn(url2, { diagramId: id, as, edit }, takeover);
     binding = { diagramId: id, as, edit };
-    await mkdir2(join3(sessionFile, ".."), { recursive: true });
-    await writeFile(sessionFile, JSON.stringify({ diagramId: id, as, mode: b.mode, session: opts.sessionId }) + "\n");
     const mode = b.mode === "writer" ? as === e.owner ? "writer" : `writer on ${e.owner}'s board` : as === e.owner || edit ? `read-only: ${holder(b)} holds the writer lease. Ask the user whether that session is done with this board; only on yes call open_diagram {id, as${edit ? ", edit: true" : ""}, takeover: true}, after which that session only reads` : `read-only: owner is ${e.owner}. To change it, first ask the user in their language "This board belongs to ${e.owner}, not ${as}. Are you sure you want to edit it?" and only on yes call open_diagram {id, as, edit: true}`;
     const lines = [`opened ${id} "${e.name}" as ${as} (${mode}) \xB7 rev ${b.rev} \xB7 ${url2}/d/${encodeURIComponent(id)}`];
     const s = await scene(e);
@@ -37611,14 +37608,12 @@ ${formatRef(ref, b.url)}`;
   });
   return {
     server: mcp,
-    // Give back the writer lease and the status line's session file. Does not
+    // Give back the writer lease. Does not
     // start a server just to say goodbye.
     async close() {
       await mcp.close();
       if (!binding) return;
       binding = null;
-      await unlink2(sessionFile).catch(() => {
-      });
       const live = await findServer(opts.projectDir);
       if (live) await request(live.url, "DELETE", `/api/sessions/${encodeURIComponent(opts.sessionId)}`).catch(() => {
       });
@@ -37630,7 +37625,6 @@ ${formatRef(ref, b.url)}`;
 var board = createBoardServer({
   projectDir: process.env.PROJECT_DIR || process.cwd(),
   sessionId: `mcp-${process.pid}`,
-  claudePid: process.ppid,
   diagramId: process.env.DIAGRAM_ID || void 0,
   as: process.env.DIAGRAM_AS || void 0
 });

@@ -7,18 +7,24 @@ Credits: the sync and change-log ideas build on [yctimlin/mcp_excalidraw](https:
 ## Requirements
 
 - Node.js 22.12 or newer
-- [Claude Code](https://claude.com/claude-code)
+- [Claude Code](https://claude.com/claude-code), or another harness that runs MCP servers (Codex, Cursor, Gemini CLI, VS Code Copilot, opencode)
 - macOS or Linux, with a browser on the same machine
 
 ## Install
 
+### Claude Code plugin
+
 From the project root:
 
 ```sh
-npx skills add khacquynhdevops/excalidraw-live -a claude-code --copy
+claude plugin marketplace add khacquynhdevops/excalidraw-live
+claude plugin install excalidraw-live@excalidraw-live -s local    # only you, in this project
+claude plugin install excalidraw-live@excalidraw-live -s project  # everyone, through .claude/settings.json
 ```
 
-Then start `claude` and run `/setup-excalidraw-live`. The first time, it asks whether to add an unread-count status line and which role agents to install (Scrum core `po-diagram`, `dev-diagram`, `tester-diagram`; all five; or none). Each agent draws the diagrams of one role and opens boards as that role (`po-diagram` as `po`). It registers the MCP server in `.mcp.json`, creates `docs/diagrams/`, adds two `.gitignore` lines and starts the canvas server. Your existing files are kept.
+The plugin is on only in the projects you install it in. It brings the MCP server, the skills and a band above the prompt showing the open board's unread changes.
+
+Then start `claude` and run `/excalidraw-live:setup-excalidraw-live`. The first time, it asks whether to install role agents: none (the default), Scrum core (`po-diagram`, `dev-diagram`, `tester-diagram`), or the full team of five. Each agent draws the diagrams of one role and opens boards as that role (`po-diagram` as `po`). It creates `docs/diagrams/`, adds two `.gitignore` lines and starts the canvas server. Your existing files are kept.
 
 Exit Claude, then start a role from the project root:
 
@@ -26,7 +32,38 @@ Exit Claude, then start a role from the project root:
 claude --agent po-diagram  # or any role agent you installed; plain `claude` works too
 ```
 
-Approve the `excalidraw-live` MCP server when asked, and open the board URL the agent gives you.
+Open the board URL the agent gives you, or press Open on the band.
+
+### Other agent harnesses
+
+The skills also install without the plugin, for Claude Code or another harness, but without the band. From the project root:
+
+```sh
+npx skills add khacquynhdevops/excalidraw-live
+node .agents/skills/setup-excalidraw-live/scripts/setup.mjs --harness codex   # use the path npx printed
+```
+
+`--harness` takes `codex`, `cursor`, `gemini`, `vscode` (Copilot) or `opencode`, as a comma list or repeated, and writes the `excalidraw-live` MCP server into that harness's project config:
+
+| Harness | File |
+|---|---|
+| `codex` | `.codex/config.toml` (Codex reads it in trusted projects only) |
+| `cursor` | `.cursor/mcp.json` |
+| `gemini` | `.gemini/settings.json` |
+| `vscode` | `.vscode/mcp.json` |
+| `opencode` | `opencode.json` |
+
+Other servers in those files are kept. Restart the harness so it loads the server. The role agents (`--agents`) are for Claude Code only.
+
+In Claude Code, run `/setup-excalidraw-live` instead: it registers the server in `.mcp.json` and copies the `excalidraw-collab` skill into `.claude/skills/`. Approve the `excalidraw-live` MCP server when Claude asks.
+
+Any other MCP client: register a stdio server that runs, from the project root,
+
+```sh
+node <skills folder>/setup-excalidraw-live/runtime/mcp.mjs
+```
+
+If the client cannot set the working directory, set `PROJECT_DIR` to the project root instead. Run `setup.mjs` once without `--harness` flags for that client to create `docs/diagrams/` and start the canvas server (it also writes `.mcp.json`, which other clients ignore).
 
 ## Roles
 
@@ -40,18 +77,18 @@ Approve the `excalidraw-live` MCP server when asked, and open the board URL the 
 
 Every role can read every board. Before editing a board another role owns, the agent warns you ("this board is not yours, are you sure?") and writes only if you say yes. Roles share exact shapes as `dl://` refs, and `ask` leaves a question for a role that is not running.
 
-Turn on the status line during setup and always check it before asking for a change: it shows which board and role the session is on, so you do not edit the wrong one. `✏️ Shop · po` is your own board, `👀 Shop (po's) · dev read-only` is another role's board you can only read, and `⚠️ Shop (po's) · dev editing` means you are editing another role's board.
+With the plugin, check the band above the prompt before asking for a change: it shows which board and role the session is on and how many changes it has not read, so you do not edit the wrong one. `✏️ Shop · po` is your own board, `👀 Shop (po's) · dev read-only` is another role's board you can only read, and `⚠️ Shop (po's) · dev editing` means you are editing another role's board.
 
 ## Commands
 
-| `/setup-excalidraw-live …` | What it does |
+| `/excalidraw-live:setup-excalidraw-live …` | What it does |
 |---|---|
 | (no flag) | Set up, or start the server if it is not running |
 | `--agents devops-diagram,security-diagram` | Install more role agents |
 | `--stop` / `--restart` | Stop or restart the server |
-| `--update` | After `npx skills update`, refresh the installed agents and skills |
+| `--update` | After an update, refresh the installed agents (and, without the plugin, the skills) |
 
-To update: `--stop`, `npx skills update`, `--update`, `--restart`, then restart your Claude sessions.
+To update: `claude plugin update excalidraw-live@excalidraw-live` (or `npx skills update`), then `--update`, `--restart`, and restart your Claude sessions.
 
 ## Develop
 
