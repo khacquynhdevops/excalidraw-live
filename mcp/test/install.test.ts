@@ -19,14 +19,14 @@ function run(cwd: string, script: string, input = '', env: Record<string, string
   });
 }
 
-describe('setup-excalidraw-live-multiagent', () => {
+describe('setup-excalidraw-live', () => {
   let dir: string;
-  const init = (...args: string[]) => run(dir, '.claude/skills/setup-excalidraw-live-multiagent/scripts/setup.mjs', '', {}, args);
+  const init = (...args: string[]) => run(dir, '.claude/skills/setup-excalidraw-live/scripts/setup.mjs', '', {}, args);
   const json = (p: string) => JSON.parse(readFileSync(join(dir, p), 'utf8'));
 
   beforeAll(() => {
     dir = realpathSync(mkdtempSync(join(tmpdir(), 'xl-init-')));
-    for (const skill of ['setup-excalidraw-live-multiagent', 'excalidraw-collab'])
+    for (const skill of ['setup-excalidraw-live', 'excalidraw-collab'])
       cpSync(join(tool, 'skills', skill), join(dir, '.claude', 'skills', skill), { recursive: true });
     // A project that already has settings, a prompt hook of its own, an MCP
     // server and a .gitignore, plus the prompt hook and absolute status line
@@ -54,20 +54,20 @@ describe('setup-excalidraw-live-multiagent', () => {
 
     expect(json('.mcp.json').mcpServers).toEqual({
       other: { command: 'x' },
-      'excalidraw-live': { command: 'node', args: ['.claude/skills/setup-excalidraw-live-multiagent/runtime/mcp.mjs'] }
+      'excalidraw-live': { command: 'node', args: ['.claude/skills/setup-excalidraw-live/runtime/mcp.mjs'] }
     });
     for (const role of ['po', 'dev', 'tester', 'devops', 'security'])
       expect(existsSync(join(dir, '.claude', 'agents', `${role}-diagram.md`))).toBe(role === 'po' || role === 'dev');
     expect(existsSync(join(dir, '.claude', 'skills', 'excalidraw-collab', 'references', 'elements.md'))).toBe(true);
     expect(json('docs/diagrams/diagrams.json')).toEqual([]);
-    expect(readFileSync(join(dir, '.gitignore'), 'utf8')).toBe('node_modules/\n.claude/skills/setup-excalidraw-live-multiagent/state/\n*.excalidraw.log.jsonl\n');
+    expect(readFileSync(join(dir, '.gitignore'), 'utf8')).toBe('node_modules/\n.claude/skills/setup-excalidraw-live/state/\n*.excalidraw.log.jsonl\n');
 
     const settings = json('.claude/settings.json');
     expect(settings.permissions).toEqual({ allow: ['Bash(ls)'] });
     // The old prompt hook is gone; the project's own is kept.
     expect(settings.hooks).toEqual({ UserPromptSubmit: [{ hooks: [{ type: 'command', command: 'echo mine' }] }] });
     // Relative to the project, so the committed files work in any clone.
-    expect(settings.statusLine).toEqual({ type: 'command', command: 'node "${CLAUDE_PROJECT_DIR:-.}/.claude/skills/setup-excalidraw-live-multiagent/scripts/statusline.mjs"', refreshInterval: 2 });
+    expect(settings.statusLine).toEqual({ type: 'command', command: 'node "${CLAUDE_PROJECT_DIR:-.}/.claude/skills/setup-excalidraw-live/scripts/statusline.mjs"', refreshInterval: 2 });
     expect(await findServer(dir)).not.toBeNull();
   }, 30_000);
 
@@ -92,7 +92,7 @@ describe('setup-excalidraw-live-multiagent', () => {
     expect(r.out).toMatch(/updated\s+\.claude\/agents\/po-diagram\.md/);
     expect(r.out).toMatch(/unchanged\s+\.claude\/agents\/dev-diagram\.md/);
     expect(r.out).toMatch(/restart/i);
-    expect(readFileSync(join(dir, '.claude', 'agents', 'po-diagram.md'), 'utf8')).toBe(readFileSync(join(tool, 'skills', 'setup-excalidraw-live-multiagent', 'agents', 'po-diagram.md'), 'utf8'));
+    expect(readFileSync(join(dir, '.claude', 'agents', 'po-diagram.md'), 'utf8')).toBe(readFileSync(join(tool, 'skills', 'setup-excalidraw-live', 'agents', 'po-diagram.md'), 'utf8'));
     expect(existsSync(join(dir, '.claude', 'agents', 'tester-diagram.md'))).toBe(false);
     expect(existsSync(join(dir, '.claude', 'agents', 'security-diagram.md'))).toBe(true);
     expect(readFileSync(join(dir, '.claude', 'agents', 'security.md'), 'utf8')).toBe('old security');
@@ -116,8 +116,8 @@ describe('setup-excalidraw-live-multiagent', () => {
     // What open_diagram does: bind on the server, and record the binding
     // under the Claude process, which the status line runs under too.
     await fetch(`${url}/api/sessions`, { method: 'POST', body: JSON.stringify({ session: 's', diagramId: id, as: 'po' }) });
-    mkdirSync(join(dir, '.claude', 'skills', 'setup-excalidraw-live-multiagent', 'state', 'sessions'), { recursive: true });
-    const bind = (as: string, mode: string) => writeFileSync(join(dir, '.claude', 'skills', 'setup-excalidraw-live-multiagent', 'state', 'sessions', `${process.pid}.json`), JSON.stringify({ diagramId: id, as, mode, session: 's' }));
+    mkdirSync(join(dir, '.claude', 'skills', 'setup-excalidraw-live', 'state', 'sessions'), { recursive: true });
+    const bind = (as: string, mode: string) => writeFileSync(join(dir, '.claude', 'skills', 'setup-excalidraw-live', 'state', 'sessions', `${process.pid}.json`), JSON.stringify({ diagramId: id, as, mode, session: 's' }));
     bind('po', 'writer');
     expect((await run(dir, status, '{}', env)).out).toBe('✏️ Shop · po: 0 unread');
 
@@ -150,7 +150,7 @@ describe('setup-excalidraw-live-multiagent', () => {
     expect(r.code, r.out).toBe(0);
     expect(r.out).toContain(`docs/diagrams/${id.file}`);
     expect(await findServer(dir)).toBeNull();
-    expect(existsSync(join(dir, '.claude', 'skills', 'setup-excalidraw-live-multiagent', 'state', 'server.json'))).toBe(false);
+    expect(existsSync(join(dir, '.claude', 'skills', 'setup-excalidraw-live', 'state', 'server.json'))).toBe(false);
     expect(readFileSync(join(dir, 'docs', 'diagrams', id.file), 'utf8')).toContain('"id": "last"');
 
     const again = await init('--stop');
@@ -159,9 +159,9 @@ describe('setup-excalidraw-live-multiagent', () => {
 
   it('without choices installs no agent and no status line, and refuses an unknown role', async () => {
     const bare = realpathSync(mkdtempSync(join(tmpdir(), 'xl-bare-')));
-    for (const skill of ['setup-excalidraw-live-multiagent', 'excalidraw-collab'])
+    for (const skill of ['setup-excalidraw-live', 'excalidraw-collab'])
       cpSync(join(tool, 'skills', skill), join(bare, '.claude', 'skills', skill), { recursive: true });
-    const script = '.claude/skills/setup-excalidraw-live-multiagent/scripts/setup.mjs';
+    const script = '.claude/skills/setup-excalidraw-live/scripts/setup.mjs';
 
     const wrong = await run(bare, script, '', {}, ['--agents', 'po-diagram,po']);
     expect(wrong).toEqual({ code: 1, out: 'unknown role agent: po (choose from dev-diagram, devops-diagram, po-diagram, security-diagram, tester-diagram)\n' });

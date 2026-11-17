@@ -15,7 +15,7 @@ afterEach(() => {
   }
 });
 
-const serverEntry = fileURLToPath(new URL('../../skills/setup-excalidraw-live-multiagent/runtime/server.mjs', import.meta.url));
+const serverEntry = fileURLToPath(new URL('../../skills/setup-excalidraw-live/runtime/server.mjs', import.meta.url));
 const project = () => mkdtempSync(join(tmpdir(), 'xl-proj-'));
 const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 async function ensure(dir: string) {
@@ -52,7 +52,7 @@ describe('ensureServer', () => {
 
   it('replaces a stale server.json whose process is gone', async () => {
     const dir = project();
-    mkdirSync(join(dir, '.claude', 'skills', 'setup-excalidraw-live-multiagent', 'state'), { recursive: true });
+    mkdirSync(join(dir, '.claude', 'skills', 'setup-excalidraw-live', 'state'), { recursive: true });
     writeFileSync(statePath(dir), JSON.stringify({ port: 1, pid: 999999, startedAt: 'x' }));
     const s = await ensure(dir);
     expect(s.started).toBe(true);

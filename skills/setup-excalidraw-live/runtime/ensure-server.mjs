@@ -5,7 +5,7 @@ import { spawn } from "node:child_process";
 import { mkdir, open, readFile, stat, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-var STATE_DIR = join(".claude", "skills", "setup-excalidraw-live-multiagent", "state");
+var STATE_DIR = join(".claude", "skills", "setup-excalidraw-live", "state");
 var LOCK_STALE_MS = 15e3;
 var stateDir = (projectDir) => join(projectDir, STATE_DIR);
 var statePath = (projectDir) => join(stateDir(projectDir), "server.json");

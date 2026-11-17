@@ -33,7 +33,7 @@ const scripts = join(skill, 'scripts');
 // Config written into the project uses paths relative to its root, so the
 // files can be committed and work in any clone. Claude Code starts the MCP
 // server in the folder `claude` was started from: the project root.
-const rel = '.claude/skills/setup-excalidraw-live-multiagent';
+const rel = '.claude/skills/setup-excalidraw-live';
 const report = [];
 const note = (what, path) => report.push(`${what.padEnd(9)} ${relative(project, path) || '.'}`);
 
@@ -136,7 +136,7 @@ await copyFiles(join(skills, 'excalidraw-collab'), join(claude, 'skills', 'excal
   const path = join(project, '.gitignore');
   const text = existsSync(path) ? await readFile(path, 'utf8') : '';
   const have = new Set(text.split('\n').map((l) => l.trim().replace(/^\//, '')));
-  const missing = ['.claude/skills/setup-excalidraw-live-multiagent/state/', '*.excalidraw.log.jsonl'].filter((l) => !have.has(l));
+  const missing = ['.claude/skills/setup-excalidraw-live/state/', '*.excalidraw.log.jsonl'].filter((l) => !have.has(l));
   if (!missing.length) note('unchanged', path);
   else {
     await appendFile(path, `${text && !text.endsWith('\n') ? '\n' : ''}${missing.join('\n')}\n`);
@@ -172,6 +172,6 @@ const server = await ensureServer(project);
 console.log(report.join('\n'));
 console.log(`\ncanvas server ${server.started ? 'started' : 'already running'}: ${server.url} (pid ${server.pid})`);
 if (update && !server.started) {
-  console.log('The running server and open Claude sessions still use the old code: run /setup-excalidraw-live-multiagent --restart, and restart the Claude sessions.');
+  console.log('The running server and open Claude sessions still use the old code: run /setup-excalidraw-live --restart, and restart the Claude sessions.');
 }
 console.log('Start Claude again (`claude`, or `claude --agent <role>-diagram` for an installed role agent). A session that was already open must be restarted to load the MCP server.');

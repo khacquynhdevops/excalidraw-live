@@ -1,6 +1,6 @@
 ---
-name: setup-excalidraw-live-multiagent
-description: Set up excalidraw-live (live Excalidraw boards shared by Claude sessions playing Scrum-team roles po/dev/tester/devops/security) in this project and start, stop, restart or update its canvas server. Required before the board tools work. Run by the user as /setup-excalidraw-live-multiagent [--update|--stop|--restart]; a first setup asks which role agents to install and whether to add a status line.
+name: setup-excalidraw-live
+description: Set up excalidraw-live (live Excalidraw boards shared by Claude sessions playing Scrum-team roles po/dev/tester/devops/security) in this project and start, stop, restart or update its canvas server. Required before the board tools work. Run by the user as /setup-excalidraw-live [--update|--stop|--restart]; a first setup asks which role agents to install and whether to add a status line.
 disable-model-invocation: true
 ---
 
@@ -14,7 +14,7 @@ Nothing works until this has run once in the project: it registers the MCP serve
    Turn the answers into `--statusline` and `--agents <comma list>` (`--agents none` for none). Otherwise pass $ARGUMENTS as they are and ask nothing: a project already set up only needs the server up, and `--update`, `--stop`, `--restart` never ask.
 2. From the project root, run the script with those flags:
    ```sh
-   node .claude/skills/setup-excalidraw-live-multiagent/scripts/setup.mjs [--agents po-diagram,dev-diagram,tester-diagram] [--statusline] [--update|--stop|--restart]
+   node .claude/skills/setup-excalidraw-live/scripts/setup.mjs [--agents po-diagram,dev-diagram,tester-diagram] [--statusline] [--update|--stop|--restart]
    ```
    - Always adds what is missing, then starts the server (running it again just makes sure the server is up):
      - the `excalidraw-live` entry in `.mcp.json`, pointing at the server bundled in this skill's `runtime/` by a path relative to the project root

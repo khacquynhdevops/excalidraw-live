@@ -7,7 +7,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 const project = process.cwd();
-const statePath = join(project, '.claude', 'skills', 'setup-excalidraw-live-multiagent', 'state', 'server.json');
+const statePath = join(project, '.claude', 'skills', 'setup-excalidraw-live', 'state', 'server.json');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let state;

@@ -15,7 +15,7 @@
   "scripts": {
     "build": "tsc -b && npm run build -w web && node scripts/bundle.mjs",
     "test": "npm test --workspaces --if-present",
-    "canvas": "node skills/setup-excalidraw-live-multiagent/runtime/server.mjs",
+    "canvas": "node skills/setup-excalidraw-live/runtime/server.mjs",
     "security": "sh scripts/security-scan.sh"
   },
   "devDependencies": {

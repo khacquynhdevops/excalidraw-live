@@ -21,7 +21,7 @@ function ancestors(pid, depth = 8) {
 }
 
 export async function boardStatus(projectDir) {
-  const state = join(projectDir, '.claude', 'skills', 'setup-excalidraw-live-multiagent', 'state');
+  const state = join(projectDir, '.claude', 'skills', 'setup-excalidraw-live', 'state');
   let session = null;
   for (const pid of ancestors(process.ppid)) {
     session = await readFile(join(state, 'sessions', `${pid}.json`), 'utf8').then(JSON.parse, () => null);

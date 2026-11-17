@@ -8,7 +8,7 @@ import { cpSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const root = (p) => fileURLToPath(new URL(`../${p}`, import.meta.url));
-const out = root('skills/setup-excalidraw-live-multiagent/runtime');
+const out = root('skills/setup-excalidraw-live/runtime');
 
 rmSync(out, { recursive: true, force: true });
 await build({

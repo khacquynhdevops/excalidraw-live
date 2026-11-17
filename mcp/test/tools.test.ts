@@ -10,7 +10,7 @@ import type { DiagramEntry, SceneEl } from '@excalidraw-live/shared';
 import { findServer } from '@excalidraw-live/shared/ensureServer';
 import { createBoardServer, type BoardServerOptions } from '../src/tools.js';
 
-const serverEntry = fileURLToPath(new URL('../../skills/setup-excalidraw-live-multiagent/runtime/server.mjs', import.meta.url));
+const serverEntry = fileURLToPath(new URL('../../skills/setup-excalidraw-live/runtime/server.mjs', import.meta.url));
 
 function el(id: string, over: Partial<SceneEl> = {}): SceneEl {
   return { id, type: 'rectangle', x: 0, y: 0, width: 100, height: 50, version: 1, versionNonce: 1, isDeleted: false, updated: Date.now(), ...over };
@@ -139,7 +139,7 @@ describe('a bound session', () => {
     expect(r.text).toContain('overview: draw it as an expert in impact mapping');
     expect((await po.call('read_diagram')).text).toMatch(/^board "Overview"/);
     url = (await findServer(dir))!.url;
-    expect(JSON.parse(readFileSync(join(dir, '.claude', 'skills', 'setup-excalidraw-live-multiagent', 'state', 'sessions', '111.json'), 'utf8')))
+    expect(JSON.parse(readFileSync(join(dir, '.claude', 'skills', 'setup-excalidraw-live', 'state', 'sessions', '111.json'), 'utf8')))
       .toEqual({ diagramId: 'd_over', as: 'po', mode: 'writer', session: 'mcp-test-po' });
   });
 
@@ -268,7 +268,7 @@ describe('a bound session', () => {
 
   it('releases the lease and its session file on close', async () => {
     await po.board.close();
-    expect(existsSync(join(dir, '.claude', 'skills', 'setup-excalidraw-live-multiagent', 'state', 'sessions', '111.json'))).toBe(false);
+    expect(existsSync(join(dir, '.claude', 'skills', 'setup-excalidraw-live', 'state', 'sessions', '111.json'))).toBe(false);
     const again = await connect({ projectDir: dir, sessionId: 'mcp-test-po2', claudePid: 333 });
     expect((await again.call('open_diagram', { id: 'd_over', as: 'po' })).text).toMatch(/\(writer\)/);
   });

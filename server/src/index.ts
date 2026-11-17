@@ -1,7 +1,7 @@
 // Canvas server: serves the web app and syncs a folder of diagrams over WebSocket.
 // It runs as the bundle runtime/server.mjs inside the init skill, with the web
 // app in runtime/web next to it.
-//   PROJECT_DIR   project root; state goes to .claude/skills/setup-excalidraw-live-multiagent/state/ (default: cwd)
+//   PROJECT_DIR   project root; state goes to .claude/skills/setup-excalidraw-live/state/ (default: cwd)
 //   DIAGRAMS_DIR  folder holding diagrams.json and the .excalidraw files (default <project>/docs/diagrams)
 //   PORT          default: a free port
 //   HOST          default 127.0.0.1

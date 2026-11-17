@@ -20,7 +20,7 @@ step secrets docker run --rm -v "$repo:/repo:ro" ghcr.io/gitleaks/gitleaks:v8.30
 step sast docker run --rm -v "$repo:/src:ro" -w /src semgrep/semgrep:1.184.0 \
   semgrep scan --metrics=off --error --severity WARNING --severity ERROR \
   --config p/default --config p/typescript --config p/nodejs \
-  --exclude skills/setup-excalidraw-live-multiagent/runtime --exclude node_modules --exclude dist
+  --exclude skills/setup-excalidraw-live/runtime --exclude node_modules --exclude dist
 
 step dependencies docker run --rm -v "$repo:/app:ro" -w /app node:22-alpine \
   npm audit --omit=dev --audit-level=high

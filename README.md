@@ -18,7 +18,7 @@ From the project root:
 npx skills add khacquynhdevops/excalidraw-live -a claude-code --copy
 ```
 
-Then start `claude` and run `/setup-excalidraw-live-multiagent`. The first time, it asks whether to add an unread-count status line and which role agents to install (Scrum core `po-diagram`, `dev-diagram`, `tester-diagram`; all five; or none). Each agent draws the diagrams of one role and opens boards as that role (`po-diagram` as `po`). It registers the MCP server in `.mcp.json`, creates `docs/diagrams/`, adds two `.gitignore` lines and starts the canvas server. Your existing files are kept.
+Then start `claude` and run `/setup-excalidraw-live`. The first time, it asks whether to add an unread-count status line and which role agents to install (Scrum core `po-diagram`, `dev-diagram`, `tester-diagram`; all five; or none). Each agent draws the diagrams of one role and opens boards as that role (`po-diagram` as `po`). It registers the MCP server in `.mcp.json`, creates `docs/diagrams/`, adds two `.gitignore` lines and starts the canvas server. Your existing files are kept.
 
 Exit Claude, then start a role from the project root:
 
@@ -44,7 +44,7 @@ Turn on the status line during setup and always check it before asking for a cha
 
 ## Commands
 
-| `/setup-excalidraw-live-multiagent …` | What it does |
+| `/setup-excalidraw-live …` | What it does |
 |---|---|
 | (no flag) | Set up, or start the server if it is not running |
 | `--agents devops-diagram,security-diagram` | Install more role agents |
@@ -57,7 +57,7 @@ To update: `--stop`, `npx skills update`, `--update`, `--restart`, then restart 
 
 ```sh
 npm install
-npm run build   # bundles into skills/setup-excalidraw-live-multiagent/runtime/ (committed)
+npm run build   # bundles into skills/setup-excalidraw-live/runtime/ (committed)
 npm test
 ```
 
