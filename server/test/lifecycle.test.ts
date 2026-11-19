@@ -52,7 +52,7 @@ describe('ensureServer', () => {
 
   it('replaces a stale server.json whose process is gone', async () => {
     const dir = project();
-    mkdirSync(join(dir, '.claude', 'excalidraw-live', 'state'), { recursive: true });
+    mkdirSync(join(dir, '.excalidraw-live'), { recursive: true });
     writeFileSync(statePath(dir), JSON.stringify({ port: 1, pid: 999999, startedAt: 'x' }));
     const s = await ensure(dir);
     expect(s.started).toBe(true);

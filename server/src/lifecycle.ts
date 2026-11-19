@@ -3,7 +3,7 @@ import { statePath, type ServerState } from '@excalidraw-live/shared/ensureServe
 import { writeAtomic } from './file-io.js';
 import type { CanvasServer } from './http.js';
 
-// Record this process in <projectDir>/.claude/excalidraw-live/state/server.json so
+// Record this process in <projectDir>/.excalidraw-live/server.json so
 // ensureServer can find it.
 export async function writeState(projectDir: string, port: number): Promise<void> {
   const state: ServerState = { port, pid: process.pid, startedAt: new Date().toISOString() };

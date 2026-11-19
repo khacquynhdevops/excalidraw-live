@@ -42,7 +42,7 @@ Not sure? Use `-s local`. The plugin is on only in the projects you install it i
 /excalidraw-live:setup-excalidraw-live
 ```
 
-It creates `docs/diagrams/`, adds two `.gitignore` lines and starts the canvas server. Your existing files are kept. The first time, it asks whether to install role agents:
+It creates `docs/diagrams/`, adds `.excalidraw-live/` (server state and change logs) to `.gitignore` and starts the canvas server. Your existing files are kept. The first time, it asks whether to install role agents:
 
 - none (the default): use plain `claude`;
 - Scrum core: `po-diagram`, `dev-diagram`, `tester-diagram`;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { appendFileSync, mkdtempSync, readFileSync, statSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ChangeRecord } from '@excalidraw-live/shared';
@@ -97,13 +97,20 @@ describe('SceneStore change log', () => {
 });
 
 describe('Workspace', () => {
-  it('keeps change logs out of git', async () => {
+  it('keeps change logs in logDir, moving one left next to the drawing', async () => {
     const { Workspace } = await import('../src/workspace.js');
-    const dir = join(tmp(), 'diagrams');
-    const ws = await Workspace.load({ dir, debounceMs: 0 });
-    await ws.create({ name: 'A', kind: 'free', owner: 'po' });
-    await ws.create({ name: 'B', kind: 'free', owner: 'po' });
-    expect(readFileSync(join(dir, '.gitignore'), 'utf8')).toBe('*.log.jsonl\n');
+    const root = tmp();
+    const dir = join(root, 'diagrams');
+    const logDir = join(root, 'logs');
+    const ws = await Workspace.load({ dir, logDir, debounceMs: 0 });
+    const a = await ws.create({ name: 'A', kind: 'free', owner: 'po' });
+    appendFileSync(join(dir, `${a.file}.log.jsonl`), JSON.stringify(rec(7)) + '\n');
+    const store = await ws.store(a.id);
+    expect(store.revision).toBe(7);
+    expect(existsSync(join(dir, `${a.file}.log.jsonl`))).toBe(false);
+    store.upsert([el('x')]);
     await ws.close();
+    expect(readFileSync(join(logDir, `${a.file}.log.jsonl`), 'utf8')).toContain('"rev":8');
+    expect(readdirSync(dir).filter((f) => f.endsWith('.log.jsonl') || f === '.gitignore')).toEqual([]);
   });
 });

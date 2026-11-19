@@ -32,7 +32,8 @@ function project(): string {
   writeFileSync(join(diagrams, 'diagrams.json'), JSON.stringify(index));
   const scene = (elements: SceneEl[]) => JSON.stringify({ type: 'excalidraw', version: 2, elements, appState: {}, files: {} });
   writeFileSync(join(diagrams, 'overview.excalidraw'), scene(labelled('checkout', 'Checkout', { link: '/d/d_seq#pay' })));
-  writeFileSync(join(diagrams, 'overview.excalidraw.log.jsonl'), '{"rev":4}\n');
+  mkdirSync(join(dir, '.excalidraw-live', 'logs'), { recursive: true });
+  writeFileSync(join(dir, '.excalidraw-live', 'logs', 'overview.excalidraw.log.jsonl'), '{"rev":4}\n');
   writeFileSync(join(diagrams, 'checkout.excalidraw'), scene(labelled('pay', 'Pay')));
   return dir;
 }

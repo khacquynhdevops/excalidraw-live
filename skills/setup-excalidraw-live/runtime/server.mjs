@@ -3742,14 +3742,15 @@ import { fileURLToPath } from "node:url";
 
 // shared/dist/ensureServer.js
 import { join } from "node:path";
-var STATE_DIR = join(".claude", "excalidraw-live", "state");
+var STATE_DIR = ".excalidraw-live";
 var stateDir = (projectDir2) => join(projectDir2, STATE_DIR);
 var statePath = (projectDir2) => join(stateDir(projectDir2), "server.json");
+var logsDir = (projectDir2) => join(stateDir(projectDir2), "logs");
 var diagramsDir = (projectDir2) => join(projectDir2, "docs", "diagrams");
 
 // server/src/workspace.ts
 import { randomBytes } from "node:crypto";
-import { readFile as readFile4, writeFile } from "node:fs/promises";
+import { mkdir as mkdir2, readFile as readFile4, rename as rename2, stat as stat4 } from "node:fs/promises";
 import { join as join5 } from "node:path";
 
 // shared/dist/types.js
@@ -4334,7 +4335,7 @@ var SceneStore = class _SceneStore {
     for (const el of scene.elements) store.elements.set(el.id, el);
     store.appState = scene.appState;
     store.files = scene.files;
-    store.log = await ChangeLog.load(`${opts.path}.log.jsonl`, opts.log);
+    store.log = await ChangeLog.load(opts.logPath ?? `${opts.path}.log.jsonl`, opts.log);
     store.revision = store.log.lastRev;
     return store;
   }
@@ -6013,8 +6014,8 @@ var FSWatcher = class extends EventEmitter {
     }
     return this._userIgnored(path, stats);
   }
-  _isntIgnored(path, stat4) {
-    return !this._isIgnored(path, stat4);
+  _isntIgnored(path, stat5) {
+    return !this._isIgnored(path, stat5);
   }
   /**
    * Provides a set of common helpers and properties relating to symlink handling.
@@ -6252,9 +6253,6 @@ var Workspace = class _Workspace {
     this.entries = [...this.entries, entry];
     try {
       await writeAtomic(join5(this.dir, file), serializeScene({ elements: [], appState: {}, files: {} }));
-      await writeFile(join5(this.dir, ".gitignore"), "*.log.jsonl\n", { flag: "wx" }).catch((err) => {
-        if (err.code !== "EEXIST") throw err;
-      });
     } catch (err) {
       this.entries = this.entries.filter((d) => d !== entry);
       throw err;
@@ -6277,7 +6275,7 @@ var Workspace = class _Workspace {
     if (!s) {
       const entry = this.get(id);
       if (!entry) return Promise.reject(new WorkspaceError(`unknown diagram: ${id}`));
-      s = SceneStore.load({ path: join5(this.dir, entry.file), debounceMs: this.opts.debounceMs, now: this.opts.now }).then((store) => {
+      s = this.logPath(entry.file).then((logPath) => SceneStore.load({ path: join5(this.dir, entry.file), logPath, debounceMs: this.opts.debounceMs, now: this.opts.now })).then((store) => {
         this.unwatch.push(watchStore(store, (els, files) => {
           for (const fn of this.fileListeners) fn(id, store.revision, els, files);
         }));
@@ -6289,6 +6287,17 @@ var Workspace = class _Workspace {
       this.stores.set(id, s);
     }
     return s;
+  }
+  // Older versions kept the log next to the drawing; move it once so the
+  // revision count carries on.
+  async logPath(file) {
+    if (!this.opts.logDir) return void 0;
+    const path = join5(this.opts.logDir, `${file}.log.jsonl`);
+    await mkdir2(this.opts.logDir, { recursive: true });
+    const there = await stat4(path).then(() => true, () => false);
+    if (!there) await rename2(join5(this.dir, `${file}.log.jsonl`), path).catch(() => {
+    });
+    return path;
   }
   onFileChange(fn) {
     this.fileListeners.add(fn);
@@ -7426,7 +7435,7 @@ var dir = resolve3(process.env.DIAGRAMS_DIR ?? diagramsDir(projectDir));
 var port = Number(process.env.PORT ?? 0);
 var host = process.env.HOST ?? "127.0.0.1";
 var staticDir = fileURLToPath(new URL("./web", import.meta.url));
-var workspace = await Workspace.load({ dir, cursorsPath: join7(stateDir(projectDir), "cursors.json") });
+var workspace = await Workspace.load({ dir, cursorsPath: join7(stateDir(projectDir), "cursors.json"), logDir: logsDir(projectDir) });
 var server = await startServer({ workspace, port, host, staticDir });
 var actual = server.http.address().port;
 exitOnSignal(server, projectDir);

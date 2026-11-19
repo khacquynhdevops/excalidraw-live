@@ -13,7 +13,7 @@ const isHidden = atom({ plugin: 'excalidraw-live', key: 'isHidden' } as const, f
 // install) and `plugin_excalidraw-live_excalidraw-live` from this plugin.
 const OPEN = /^mcp__(?:plugin_excalidraw-live_)?excalidraw-live__open_diagram$/
 // Where the canvas server records its port (shared/src/ensureServer.ts).
-const SERVER_JSON = '.claude/excalidraw-live/state/server.json'
+const SERVER_JSON = '.excalidraw-live/server.json'
 
 // Refreshes the open board's name, owner and unread count. A board the
 // server no longer knows (deleted) is dropped; without a server, port is 0.

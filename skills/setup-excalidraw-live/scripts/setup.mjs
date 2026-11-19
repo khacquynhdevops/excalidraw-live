@@ -50,7 +50,10 @@ const claudeMcp = harnesses.includes('claude') && !plugin;
 const report = [];
 const note = (what, path) => report.push(`${what.padEnd(9)} ${relative(project, path) || '.'}`);
 
-if (stop || restart) {
+// A server started by a version before 0.1.2 (state under .claude/) would not
+// be found and a second one would start: stop it as --restart does.
+const legacy = join(project, '.claude', 'excalidraw-live');
+if (stop || restart || existsSync(join(legacy, 'state', 'server.json'))) {
   const r = spawnSync(process.execPath, [join(scripts, 'stop.mjs')], { stdio: 'inherit' });
   if (stop || r.status !== 0) process.exit(r.status ?? 1);
 }
@@ -190,13 +193,13 @@ if (claudeMcp) await copyFiles(join(skills, 'excalidraw-collab'), join(claude, '
   }
 }
 
-// .claude/excalidraw-live/state/ holds runtime state (server.json, logs); the
-// per-diagram change logs sit next to the drawings but are not worth keeping.
+// .excalidraw-live/ holds runtime state: server.json, server.log and the
+// per-diagram change logs, none of which is worth keeping.
 {
   const path = join(project, '.gitignore');
   const text = existsSync(path) ? await readFile(path, 'utf8') : '';
   const have = new Set(text.split('\n').map((l) => l.trim().replace(/^\//, '')));
-  const missing = ['.claude/excalidraw-live/state/', '*.excalidraw.log.jsonl'].filter((l) => !have.has(l));
+  const missing = ['.excalidraw-live/'].filter((l) => !have.has(l));
   if (!missing.length) note('unchanged', path);
   else {
     await appendFile(path, `${text && !text.endsWith('\n') ? '\n' : ''}${missing.join('\n')}\n`);
@@ -226,6 +229,9 @@ const { ensureServer } = await import(join(skill, 'runtime', 'ensure-server.mjs'
 const server = await ensureServer(project);
 console.log(report.join('\n'));
 console.log(`\ncanvas server ${server.started ? 'started' : 'already running'}: ${server.url} (pid ${server.pid})`);
+if (existsSync(legacy)) {
+  console.log('Versions before 0.1.2 kept state in .claude/excalidraw-live/ and change logs next to the drawings; the logs move to .excalidraw-live/logs/ as each board opens. Remove .claude/excalidraw-live/ and the .gitignore lines for it and *.excalidraw.log.jsonl when you like.');
+}
 if (update && !server.started) {
   console.log('The running server and open Claude sessions still use the old code: run /setup-excalidraw-live --restart, and restart the Claude sessions.');
 }

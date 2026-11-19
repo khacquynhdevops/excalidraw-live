@@ -3,7 +3,7 @@
 // as `npx skills add --copy` does.
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { execFile } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -63,8 +63,8 @@ describe('setup-excalidraw-live', () => {
       permissions: { allow: ['Bash(ls)'] },
       hooks: { UserPromptSubmit: [{ hooks: [{ type: 'command', command: 'echo mine' }] }] }
     });
-    expect(readFileSync(join(dir, '.gitignore'), 'utf8')).toBe('node_modules/\n.claude/excalidraw-live/state/\n*.excalidraw.log.jsonl\n');
-    expect(existsSync(join(dir, '.claude', 'excalidraw-live', 'state', 'server.json'))).toBe(true);
+    expect(readFileSync(join(dir, '.gitignore'), 'utf8')).toBe('node_modules/\n.excalidraw-live/\n');
+    expect(existsSync(join(dir, '.excalidraw-live', 'server.json'))).toBe(true);
   }, 30_000);
 
   it('stops the server with the last drawing saved', async () => {
@@ -82,7 +82,7 @@ describe('setup-excalidraw-live', () => {
     expect(r.code, r.out).toBe(0);
     expect(r.out).toContain(`docs/diagrams/${id.file}`);
     expect(await findServer(dir)).toBeNull();
-    expect(existsSync(join(dir, '.claude', 'excalidraw-live', 'state', 'server.json'))).toBe(false);
+    expect(existsSync(join(dir, '.excalidraw-live', 'server.json'))).toBe(false);
     expect(readFileSync(join(dir, 'docs', 'diagrams', id.file), 'utf8')).toContain('"id": "last"');
 
     const again = await init('--stop');
@@ -123,7 +123,7 @@ describe('setup-excalidraw-live', () => {
     expect(existsSync(join(project, '.claude', 'skills'))).toBe(false);
     expect(existsSync(join(project, '.claude', 'agents', 'po-diagram.md'))).toBe(true);
     expect(existsSync(join(project, 'docs', 'diagrams', 'diagrams.json'))).toBe(true);
-    expect(readFileSync(join(project, '.gitignore'), 'utf8')).toBe('.claude/excalidraw-live/state/\n*.excalidraw.log.jsonl\n');
+    expect(readFileSync(join(project, '.gitignore'), 'utf8')).toBe('.excalidraw-live/\n');
 
     // --harness works from the plugin too, by the plugin's absolute path.
     const h = await run(project, join(plugin, 'skills', 'setup-excalidraw-live', 'scripts', 'setup.mjs'), '', {}, ['--harness', 'gemini,claude']);
@@ -234,4 +234,18 @@ describe('setup-excalidraw-live', () => {
     expect(r.out).toMatch(/canvas server started/);
     expect((await findServer(dir))!.pid).not.toBe(pid);
   }, 30_000);
+
+  it('stops a server a version before 0.1.2 left running, then starts its own', async () => {
+    const pid = (await findServer(dir))!.pid;
+    // Older versions recorded the server under .claude/excalidraw-live/state/.
+    mkdirSync(join(dir, '.claude', 'excalidraw-live', 'state'), { recursive: true });
+    renameSync(join(dir, '.excalidraw-live', 'server.json'), join(dir, '.claude', 'excalidraw-live', 'state', 'server.json'));
+
+    const r = await init();
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain(`stopped canvas server (pid ${pid}`);
+    expect(r.out).toMatch(/canvas server started/);
+    expect(r.out).toContain('Remove .claude/excalidraw-live/');
+    expect((await findServer(dir))!.pid).not.toBe(pid);
+  }, 40_000);
 });

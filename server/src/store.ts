@@ -9,6 +9,8 @@ export interface StoreOptions {
   debounceMs?: number;
   now?: () => number;
   log?: ChangeLogOptions;
+  // Where the change log goes; next to the drawing when not given.
+  logPath?: string;
 }
 
 // In-memory scene for one diagram, mirrored to a `.excalidraw` file.
@@ -49,7 +51,7 @@ export class SceneStore {
     for (const el of scene.elements) store.elements.set(el.id, el);
     store.appState = scene.appState;
     store.files = scene.files;
-    store.log = await ChangeLog.load(`${opts.path}.log.jsonl`, opts.log);
+    store.log = await ChangeLog.load(opts.logPath ?? `${opts.path}.log.jsonl`, opts.log);
     store.revision = store.log.lastRev;
     return store;
   }

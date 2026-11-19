@@ -5,10 +5,11 @@ import { spawn } from "node:child_process";
 import { mkdir, open, readFile, stat, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-var STATE_DIR = join(".claude", "excalidraw-live", "state");
+var STATE_DIR = ".excalidraw-live";
 var LOCK_STALE_MS = 15e3;
 var stateDir = (projectDir) => join(projectDir, STATE_DIR);
 var statePath = (projectDir) => join(stateDir(projectDir), "server.json");
+var logsDir = (projectDir) => join(stateDir(projectDir), "logs");
 var diagramsDir = (projectDir) => join(projectDir, "docs", "diagrams");
 var sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function findServer(projectDir) {
@@ -76,6 +77,7 @@ export {
   diagramsDir,
   ensureServer,
   findServer,
+  logsDir,
   stateDir,
   statePath
 };

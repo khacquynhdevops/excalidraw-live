@@ -10,7 +10,7 @@ import {
   DIAGRAM_KINDS, alive, formatRef, labelOf, layoutIssues, parseRef, summarizeScene,
   type DiagramEntry, type SceneEl
 } from '@excalidraw-live/shared';
-import { diagramsDir, ensureServer, findServer } from '@excalidraw-live/shared/ensureServer';
+import { diagramsDir, ensureServer, findServer, logsDir } from '@excalidraw-live/shared/ensureServer';
 import { answerQuestion, askQuestion, inboxFor, markSeen } from '@excalidraw-live/shared/questions';
 import { checkConsistency, linkRef } from './consistency.js';
 import { conventionLine } from './conventions.js';
@@ -62,7 +62,7 @@ export function createBoardServer(opts: BoardServerOptions) {
   async function fileRev(e: DiagramEntry): Promise<number> {
     let raw = '';
     try {
-      raw = await readFile(join(dir, `${e.file}.log.jsonl`), 'utf8');
+      raw = await readFile(join(logsDir(opts.projectDir), `${e.file}.log.jsonl`), 'utf8');
     } catch {
       return 0;
     }

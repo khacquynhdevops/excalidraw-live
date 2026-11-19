@@ -19,9 +19,10 @@ Nothing works until this has run once in the project: it starts the canvas serve
    - Always adds what is missing, then starts the server (running it again just makes sure the server is up):
      - `npx skills add` install without `--harness`: the `excalidraw-live` entry in `.mcp.json`, pointing at the server bundled in this skill's `runtime/` by a path relative to the project root, and the skill `excalidraw-collab` in `.claude/skills/` (an existing copy is kept)
      - `docs/diagrams/diagrams.json`, the index of the boards; the drawings live in `docs/diagrams/` and go into git
-     - `.gitignore` lines for `.claude/excalidraw-live/state/` (server state) and `*.excalidraw.log.jsonl`
+     - a `.gitignore` line for `.excalidraw-live/` (server state and change logs)
    - `--agents <list>`: also installs those role agents (`po-diagram`, `dev-diagram`, `tester-diagram`, `devops-diagram`, `security-diagram`; each plays the board role named before `-diagram`) in `.claude/agents/`; existing files are kept. Without it no agent is installed. Claude Code only.
    - `--harness <list>` (comma list or repeated): registers the `excalidraw-live` MCP server in each harness's project config instead of `.mcp.json`: `codex` `.codex/config.toml` (read in trusted projects only), `cursor` `.cursor/mcp.json`, `gemini` `.gemini/settings.json`, `vscode` `.vscode/mcp.json`, `opencode` `opencode.json`; `claude` is `.mcp.json`. Other servers are kept; our entry is replaced only when it points at another path.
+   - A canvas server started by a version before 0.1.2 (state in `.claude/excalidraw-live/`) is stopped first, so the project never runs two; the script then notes the old folder and `.gitignore` lines the user may remove. Old change logs move to `.excalidraw-live/logs/` as each board opens.
    - A status line or prompt hook an older setup added to `.claude/settings.json` is always removed: their scripts are gone.
    - `--update`: overwrites the agents already installed and the skill with this skill's current copies; an agent installed under its old name (`po.md`) gets the new one (`po-diagram.md`) and the script notes the old file for the user to remove. `docs/diagrams/` is left alone.
    - `--stop`: only stops the server. Drawings are saved as the user goes; stop flushes the last ones and lists the files.

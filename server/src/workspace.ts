@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { DIAGRAM_KINDS, type DiagramEntry, type DiagramKind, type SceneEl } from '@excalidraw-live/shared';
 import { serializeScene, writeAtomic } from './file-io.js';
@@ -12,6 +12,8 @@ export interface WorkspaceOptions {
   now?: () => number;
   // Where each role's read position is kept across restarts.
   cursorsPath?: string;
+  // Where change logs go (<file>.log.jsonl); next to the drawings when not given.
+  logDir?: string;
 }
 
 export interface NewDiagram {
@@ -131,10 +133,6 @@ export class Workspace {
     this.entries = [...this.entries, entry];
     try {
       await writeAtomic(join(this.dir, file), serializeScene({ elements: [], appState: {}, files: {} }));
-      // Change logs are local history, not part of the diagram.
-      await writeFile(join(this.dir, '.gitignore'), '*.log.jsonl\n', { flag: 'wx' }).catch((err) => {
-        if (err.code !== 'EEXIST') throw err;
-      });
     } catch (err) {
       this.entries = this.entries.filter((d) => d !== entry);
       throw err;
@@ -159,7 +157,8 @@ export class Workspace {
     if (!s) {
       const entry = this.get(id);
       if (!entry) return Promise.reject(new WorkspaceError(`unknown diagram: ${id}`));
-      s = SceneStore.load({ path: join(this.dir, entry.file), debounceMs: this.opts.debounceMs, now: this.opts.now })
+      s = this.logPath(entry.file)
+        .then((logPath) => SceneStore.load({ path: join(this.dir, entry.file), logPath, debounceMs: this.opts.debounceMs, now: this.opts.now }))
         .then((store) => {
           this.unwatch.push(watchStore(store, (els, files) => {
             for (const fn of this.fileListeners) fn(id, store.revision, els, files);
@@ -173,6 +172,17 @@ export class Workspace {
       this.stores.set(id, s);
     }
     return s;
+  }
+
+  // Older versions kept the log next to the drawing; move it once so the
+  // revision count carries on.
+  private async logPath(file: string): Promise<string | undefined> {
+    if (!this.opts.logDir) return undefined;
+    const path = join(this.opts.logDir, `${file}.log.jsonl`);
+    await mkdir(this.opts.logDir, { recursive: true });
+    const there = await stat(path).then(() => true, () => false);
+    if (!there) await rename(join(this.dir, `${file}.log.jsonl`), path).catch(() => {});
+    return path;
   }
 
   onFileChange(fn: FileChangeListener): void {

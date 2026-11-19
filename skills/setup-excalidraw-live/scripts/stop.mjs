@@ -4,37 +4,47 @@
 // saves and remove server.json. Needs nothing but Node.
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 
 const project = process.cwd();
-const statePath = join(project, '.claude', 'excalidraw-live', 'state', 'server.json');
+// Versions before 0.1.2 kept server.json under .claude/; a server they started
+// may still run and must stop too, or setup would start a second one.
+const statePaths = [join(project, '.excalidraw-live', 'server.json'), join(project, '.claude', 'excalidraw-live', 'state', 'server.json')];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-let state;
-try {
-  state = JSON.parse(await readFile(statePath, 'utf8'));
-} catch {
+const stopped = [];
+for (const statePath of statePaths) {
+  let state;
+  try {
+    state = JSON.parse(await readFile(statePath, 'utf8'));
+  } catch {
+    continue;
+  }
+
+  // Only signal the pid if it is still our server: pids get reused.
+  const health = await fetch(`http://127.0.0.1:${state.port}/health`, { signal: AbortSignal.timeout(1000) })
+    .then((r) => r.json(), () => null);
+  if (health?.pid !== state.pid) {
+    console.log(`${relative(project, statePath)} names pid ${state.pid} on port ${state.port}, but no canvas server answers there; nothing to stop`);
+    continue;
+  }
+
+  process.kill(state.pid, 'SIGTERM');
+  const alive = () => { try { process.kill(state.pid, 0); return true; } catch { return false; } };
+  for (let i = 0; i < 100 && (alive() || existsSync(statePath)); i++) await sleep(100);
+  if (alive()) {
+    console.error(`canvas server (pid ${state.pid}) did not stop within 10s`);
+    process.exit(1);
+  }
+  stopped.push(state);
+}
+
+if (!stopped.length) {
   console.log('no canvas server is running for this project');
   process.exit(0);
 }
 
-// Only signal the pid if it is still our server: pids get reused.
-const health = await fetch(`http://127.0.0.1:${state.port}/health`, { signal: AbortSignal.timeout(1000) })
-  .then((r) => r.json(), () => null);
-if (health?.pid !== state.pid) {
-  console.log(`server.json names pid ${state.pid} on port ${state.port}, but no canvas server answers there; nothing to stop`);
-  process.exit(0);
-}
-
-process.kill(state.pid, 'SIGTERM');
-const alive = () => { try { process.kill(state.pid, 0); return true; } catch { return false; } };
-for (let i = 0; i < 100 && (alive() || existsSync(statePath)); i++) await sleep(100);
-if (alive()) {
-  console.error(`canvas server (pid ${state.pid}) did not stop within 10s`);
-  process.exit(1);
-}
-
-console.log(`stopped canvas server (pid ${state.pid}, port ${state.port}); the diagrams are saved:`);
+for (const state of stopped) console.log(`stopped canvas server (pid ${state.pid}, port ${state.port}); the diagrams are saved:`);
 const dir = join(project, 'docs', 'diagrams');
 const files = (await readdir(dir).catch(() => [])).filter((f) => f.endsWith('.excalidraw'));
 for (const f of files.sort()) {
