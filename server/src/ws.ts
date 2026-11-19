@@ -7,6 +7,10 @@ import type { Workspace } from './workspace.js';
 import { applyPatch } from './patch.js';
 
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
+// shortcut: one patch carries every new image at once, so this fits ~10 of the
+// largest; a bigger paste closes the socket and its images never reach the server
+// (the browser counts them as sent). Send files one per message if that bites.
+const MAX_MESSAGE = 32 * 1024 * 1024;
 
 // Base64 payload size of a data URL, in decoded bytes.
 function fileBytes(dataURL: string): number {
@@ -74,7 +78,7 @@ export function attachSync(http: Server, workspace: Workspace): SyncRooms {
     }
     let room = rooms.get(id);
     if (!room) {
-      room = { wss: new WebSocketServer({ noServer: true }), presence: new Map() };
+      room = { wss: new WebSocketServer({ noServer: true, maxPayload: MAX_MESSAGE }), presence: new Map() };
       rooms.set(id, room);
     }
     const r = room;

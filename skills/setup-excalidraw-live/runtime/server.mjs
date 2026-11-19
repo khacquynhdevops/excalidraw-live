@@ -4289,7 +4289,7 @@ var ChangeLog = class _ChangeLog {
   }
   // One write at a time. What to write is decided when the write starts, so
   // a rewrite always holds every line kept so far. A failed write is
-  // reported and the next one still runs.
+  // reported, and the next one rewrites the whole file so no revision is lost.
   schedule() {
     if (this.scheduled) return;
     this.scheduled = true;
@@ -4301,7 +4301,10 @@ var ChangeLog = class _ChangeLog {
       this.pending = [];
       if (rewrite) await writeAtomic(this.path, text);
       else if (text) await appendFile(this.path, text);
-    }).catch((err) => console.error(`change log write failed: ${this.path}:`, err.message));
+    }).catch((err) => {
+      this.rewrite = true;
+      console.error(`change log write failed: ${this.path}:`, err.message);
+    });
   }
 };
 
@@ -6401,6 +6404,7 @@ function applyPatch(store, incoming) {
 
 // server/src/ws.ts
 var MAX_FILE_BYTES = 2 * 1024 * 1024;
+var MAX_MESSAGE = 32 * 1024 * 1024;
 function fileBytes(dataURL) {
   const comma = dataURL.indexOf(",");
   return Math.floor((dataURL.length - comma - 1) * 3 / 4);
@@ -6443,7 +6447,7 @@ function attachSync(http, workspace2) {
     }
     let room = rooms.get(id);
     if (!room) {
-      room = { wss: new import_websocket_server.default({ noServer: true }), presence: /* @__PURE__ */ new Map() };
+      room = { wss: new import_websocket_server.default({ noServer: true, maxPayload: MAX_MESSAGE }), presence: /* @__PURE__ */ new Map() };
       rooms.set(id, room);
     }
     const r = room;
@@ -7153,7 +7157,8 @@ function acceptProposal(store, opts) {
   if (!frame || !alive(frame) || frame.type !== "frame") throw new WorkspaceError(`[${opts.frameId}] is not a frame on this board`);
   const inFrame = () => store.all().filter((e) => alive(e) && e.frameId === frame.id && !e.containerId).map((e) => e.id);
   const ids = opts.elementIds ?? inFrame();
-  const stray = ids.find((id) => !inFrame().includes(id));
+  const framed = new Set(inFrame());
+  const stray = ids.find((id) => !framed.has(id));
   if (stray) throw new WorkspaceError(`[${stray}] is not in frame [${frame.id}]`);
   const patch = { frameId: null };
   const write = (ops) => agentWrite(store, ops, { presence: opts.presence, now: opts.now, frameId: null });

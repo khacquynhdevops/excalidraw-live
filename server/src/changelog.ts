@@ -106,7 +106,7 @@ export class ChangeLog {
 
   // One write at a time. What to write is decided when the write starts, so
   // a rewrite always holds every line kept so far. A failed write is
-  // reported and the next one still runs.
+  // reported, and the next one rewrites the whole file so no revision is lost.
   private schedule(): void {
     if (this.scheduled) return;
     this.scheduled = true;
@@ -118,6 +118,9 @@ export class ChangeLog {
       this.pending = [];
       if (rewrite) await writeAtomic(this.path, text);
       else if (text) await appendFile(this.path, text);
-    }).catch((err) => console.error(`change log write failed: ${this.path}:`, err.message));
+    }).catch((err) => {
+      this.rewrite = true;
+      console.error(`change log write failed: ${this.path}:`, err.message);
+    });
   }
 }

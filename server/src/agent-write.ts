@@ -423,7 +423,8 @@ export function acceptProposal(store: SceneStore, opts: AcceptOptions): AcceptRe
   if (!frame || !alive(frame) || frame.type !== 'frame') throw new WorkspaceError(`[${opts.frameId}] is not a frame on this board`);
   const inFrame = () => store.all().filter((e) => alive(e) && e.frameId === frame.id && !e.containerId).map((e) => e.id);
   const ids = opts.elementIds ?? inFrame();
-  const stray = ids.find((id) => !inFrame().includes(id));
+  const framed = new Set(inFrame());
+  const stray = ids.find((id) => !framed.has(id));
   if (stray) throw new WorkspaceError(`[${stray}] is not in frame [${frame.id}]`);
   const patch = { frameId: null };
   const write = (ops: AgentOp[]) => agentWrite(store, ops, { presence: opts.presence, now: opts.now, frameId: null });

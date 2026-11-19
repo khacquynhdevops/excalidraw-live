@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { appendFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ChangeRecord } from '@excalidraw-live/shared';
@@ -32,6 +32,18 @@ describe('ChangeLog', () => {
     const again = await ChangeLog.load(path);
     expect(again.after(0).map((r) => [r.rev, r.id])).toEqual([[1, 'a'], [2, 'b'], [3, 'a']]);
     expect(again.lastRev).toBe(3);
+  });
+
+  it('writes the lines of a failed write with the next one', async () => {
+    const dir = join(tmp(), 'later');
+    const path = join(dir, 'a.log.jsonl');
+    const log = await ChangeLog.load(path);
+    log.append([rec(1)]);
+    await log.idle(); // fails: the folder does not exist yet
+    mkdirSync(dir);
+    log.append([rec(2)]);
+    await log.idle();
+    expect((await ChangeLog.load(path)).after(0).map((r) => r.rev)).toEqual([1, 2]);
   });
 
   it('cuts the file back to its newest half when it passes the size cap', async () => {
