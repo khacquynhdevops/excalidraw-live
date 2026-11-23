@@ -200,6 +200,17 @@ describe('static files', () => {
     expect(await (await fetch(`${at}/`)).text()).toBe('hi');
     await s.close();
   });
+
+  it('answers 404 to a missing asset, and index.html to an app route', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'xl-static-'));
+    writeFileSync(join(dir, 'index.html'), 'hi');
+    const ws = await Workspace.load({ dir: join(dir, 'diagrams'), debounceMs: 0 });
+    const s = await startServer({ workspace: ws, port: 0, host: '127.0.0.1', staticDir: dir });
+    const at = `http://127.0.0.1:${(s.http.address() as AddressInfo).port}`;
+    expect((await fetch(`${at}/assets/nope.js`)).status).toBe(404);
+    expect(await (await fetch(`${at}/d/abc`)).text()).toBe('hi');
+    await s.close();
+  });
 });
 
 describe('diagrams API', () => {
@@ -249,6 +260,14 @@ describe('diagrams API', () => {
     const del = await api(`/api/diagrams/${diagram.id}`, { method: 'DELETE', headers: { origin: 'https://evil.example' } });
     expect(del.status).toBe(403);
     expect(workspace.list()).toHaveLength(1);
+  });
+
+  it('closes open boards with 4404 when the diagram is deleted', async () => {
+    const a = new Client(url, 'A');
+    await a.next('scene_init');
+    const closed = new Promise<number>((r) => a.ws.on('close', r));
+    expect((await api(`/api/diagrams/${diagram.id}`, { method: 'DELETE' })).status).toBe(204);
+    expect(await closed).toBe(4404);
   });
 
   it('deletes a diagram', async () => {

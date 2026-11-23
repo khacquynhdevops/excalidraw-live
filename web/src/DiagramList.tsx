@@ -5,7 +5,7 @@ import './home.css';
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, { ...init, headers: { 'content-type': 'application/json' } });
   if (res.status === 204) return undefined as T;
-  const body = await res.json();
+  const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.error ?? res.statusText);
   return body;
 }

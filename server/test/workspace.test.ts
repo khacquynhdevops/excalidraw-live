@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Workspace } from '../src/workspace.js';
-import { el } from './helpers.js';
+import { el, sleep } from './helpers.js';
 
 let dir: string;
 beforeEach(() => { dir = join(mkdtempSync(join(tmpdir(), 'xl-ws-')), 'diagrams'); });
@@ -69,6 +69,38 @@ describe('Workspace', () => {
     await expect(ws.remove(d.id)).rejects.toThrow();
     await ws.close();
     expect((await Workspace.load({ dir })).list()).toEqual([keep]);
+  });
+
+  it('keeps every change in the index when writes overlap', async () => {
+    const ws = await Workspace.load({ dir });
+    const a = await ws.create({ name: 'A', kind: 'free', owner: 'po' });
+    const [b] = await Promise.all([
+      ws.create({ name: 'B', kind: 'free', owner: 'po' }),
+      ws.rename(a.id, 'A2')
+    ]);
+    const reloaded = (await Workspace.load({ dir })).list();
+    expect(reloaded.map((d) => d.name).sort()).toEqual(['A2', 'B']);
+    expect(reloaded.find((d) => d.id === b.id)).toBeDefined();
+  });
+
+  it('does not write a deleted diagram back from a late change', async () => {
+    const ws = await Workspace.load({ dir, debounceMs: 100 });
+    const d = await ws.create({ name: 'Gone', kind: 'free', owner: 'po' });
+    const store = await ws.store(d.id);
+    store.upsert([el('a')]);
+    await ws.remove(d.id);
+    store.upsert([el('b')]);
+    store.addFiles({ f: { id: 'f' } });
+    await sleep(300);
+    expect(existsSync(join(dir, d.file))).toBe(false);
+    expect(existsSync(join(dir, `${d.file}.log.jsonl`))).toBe(false);
+  });
+
+  it('refuses refines that points at an unknown diagram', async () => {
+    const ws = await Workspace.load({ dir });
+    await expect(ws.create({ name: 'X', kind: 'free', owner: 'po', refines: 'd_nope00#x' })).rejects.toThrow(/refines/);
+    const parent = await ws.create({ name: 'P', kind: 'free', owner: 'po' });
+    await expect(ws.create({ name: 'C', kind: 'free', owner: 'po', refines: `${parent.id}#x` })).resolves.toMatchObject({ refines: `${parent.id}#x` });
   });
 
   it('refuses an unknown kind or a missing name/owner', async () => {

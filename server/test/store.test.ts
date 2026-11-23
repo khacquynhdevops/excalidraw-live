@@ -54,6 +54,21 @@ describe('SceneStore', () => {
     expect(fileElements().map((e) => e.id).sort()).toEqual(['fresh', 'live']);
   });
 
+  it('forgets images and human edits of pruned tombstones', async () => {
+    let now = 10 * DAY;
+    const store = new SceneStore({ path, debounceMs: 0, now: () => now });
+    store.upsert([el('img', { type: 'image', fileId: 'f1' }), el('keep', { type: 'image', fileId: 'f2' })]);
+    store.addFiles({ f1: { id: 'f1' }, f2: { id: 'f2' } });
+    store.upsert([el('img', { type: 'image', fileId: 'f1', isDeleted: true, updated: now })]);
+    await store.flush();
+    expect(Object.keys(store.getFiles()).sort()).toEqual(['f1', 'f2']);
+    now += DAY + 1;
+    await store.flush();
+    expect(store.lastHumanEdit('img')).toBeUndefined();
+    expect(Object.keys(store.getFiles())).toEqual(['f2']);
+    expect(Object.keys(JSON.parse(readFileSync(path, 'utf8')).files)).toEqual(['f2']);
+  });
+
   it('records the hash of what it wrote', async () => {
     const store = new SceneStore({ path, debounceMs: 0 });
     store.upsert([el('a')]);

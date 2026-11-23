@@ -35,6 +35,8 @@ export class SceneStore {
   private timer: NodeJS.Timeout | null = null;
   private writing: Promise<void> | null = null;
   private dirty = false;
+  // Set once the diagram is deleted: nothing is written any more.
+  private closed = false;
   private log: ChangeLog | null = null;
   // When a person (browser or text editor) last changed each element.
   private humanEdits = new Map<string, number>();
@@ -67,6 +69,7 @@ export class SceneStore {
   // Store elements as given, log what changed and schedule a save. Version
   // rules are the caller's job (see applyPatch).
   upsert(els: SceneEl[], origin: Origin = 'human'): number {
+    if (this.closed) return this.revision;
     const prev = new Map(els.map((el) => [el.id, this.elements.get(el.id)]));
     for (const el of els) this.elements.set(el.id, el);
     if (origin !== 'agent') for (const el of els) this.humanEdits.set(el.id, this.now());
@@ -103,6 +106,7 @@ export class SceneStore {
   // Excalidraw files are immutable per id, so a known id is never replaced.
   // Returns the ids that were new.
   addFiles(files: Record<string, unknown>): string[] {
+    if (this.closed) return [];
     const added = Object.keys(files).filter((id) => !(id in this.files));
     for (const id of added) this.files[id] = files[id];
     if (added.length) this.scheduleSave();
@@ -111,6 +115,7 @@ export class SceneStore {
 
   // Write now, skipping the debounce.
   async flush(): Promise<void> {
+    if (this.closed) return;
     this.clearTimer();
     this.dirty = true;
     await this.drain();
@@ -124,6 +129,14 @@ export class SceneStore {
       else await new Promise((r) => setTimeout(r, this.debounceMs));
     }
     await this.log?.idle();
+  }
+
+  // Drops a pending save and ignores later changes. A save already in
+  // flight still finishes; wait for it with idle().
+  close(): void {
+    this.closed = true;
+    this.dirty = false;
+    this.clearTimer();
   }
 
   private scheduleSave(): void {
@@ -169,8 +182,16 @@ export class SceneStore {
 
   private pruneTombstones(): void {
     const cutoff = this.now() - TOMBSTONE_TTL_MS;
+    const freed = new Set<unknown>();
     for (const [id, el] of this.elements) {
-      if (el.isDeleted && el.updated < cutoff) this.elements.delete(id);
+      if (el.isDeleted && el.updated < cutoff) {
+        this.elements.delete(id);
+        this.humanEdits.delete(id);
+        freed.add(el.fileId);
+      }
     }
+    // Only images of pruned elements go: a new image can arrive before its element.
+    for (const el of this.elements.values()) freed.delete(el.fileId);
+    for (const id of freed) if (typeof id === 'string') delete this.files[id];
   }
 }

@@ -59,7 +59,9 @@ export async function startServer(opts: ServerOptions): Promise<CanvasServer> {
     }
     // normalize() resolves "..", and the leading "/" keeps the result inside staticDir.
     const file = join(opts.staticDir, normalize(pathname));
-    for (const candidate of [file, join(opts.staticDir, 'index.html')]) {
+    // App routes (/d/<id>) get index.html; a missing asset (/x.js) is a 404.
+    const candidates = extname(pathname) ? [file] : [file, join(opts.staticDir, 'index.html')];
+    for (const candidate of candidates) {
       try {
         const body = await readFile(candidate);
         res.writeHead(200, { 'content-type': MIME[extname(candidate)] ?? 'application/octet-stream' }).end(body);

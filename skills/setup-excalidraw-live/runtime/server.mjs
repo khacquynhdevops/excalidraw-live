@@ -4324,6 +4324,8 @@ var SceneStore = class _SceneStore {
   timer = null;
   writing = null;
   dirty = false;
+  // Set once the diagram is deleted: nothing is written any more.
+  closed = false;
   log = null;
   // When a person (browser or text editor) last changed each element.
   humanEdits = /* @__PURE__ */ new Map();
@@ -4351,6 +4353,7 @@ var SceneStore = class _SceneStore {
   // Store elements as given, log what changed and schedule a save. Version
   // rules are the caller's job (see applyPatch).
   upsert(els, origin = "human") {
+    if (this.closed) return this.revision;
     const prev = new Map(els.map((el) => [el.id, this.elements.get(el.id)]));
     for (const el of els) this.elements.set(el.id, el);
     if (origin !== "agent") for (const el of els) this.humanEdits.set(el.id, this.now());
@@ -4383,6 +4386,7 @@ var SceneStore = class _SceneStore {
   // Excalidraw files are immutable per id, so a known id is never replaced.
   // Returns the ids that were new.
   addFiles(files) {
+    if (this.closed) return [];
     const added = Object.keys(files).filter((id) => !(id in this.files));
     for (const id of added) this.files[id] = files[id];
     if (added.length) this.scheduleSave();
@@ -4390,6 +4394,7 @@ var SceneStore = class _SceneStore {
   }
   // Write now, skipping the debounce.
   async flush() {
+    if (this.closed) return;
     this.clearTimer();
     this.dirty = true;
     await this.drain();
@@ -4402,6 +4407,13 @@ var SceneStore = class _SceneStore {
       else await new Promise((r) => setTimeout(r, this.debounceMs));
     }
     await this.log?.idle();
+  }
+  // Drops a pending save and ignores later changes. A save already in
+  // flight still finishes; wait for it with idle().
+  close() {
+    this.closed = true;
+    this.dirty = false;
+    this.clearTimer();
   }
   scheduleSave() {
     this.dirty = true;
@@ -4441,9 +4453,16 @@ var SceneStore = class _SceneStore {
   }
   pruneTombstones() {
     const cutoff = this.now() - TOMBSTONE_TTL_MS;
+    const freed = /* @__PURE__ */ new Set();
     for (const [id, el] of this.elements) {
-      if (el.isDeleted && el.updated < cutoff) this.elements.delete(id);
+      if (el.isDeleted && el.updated < cutoff) {
+        this.elements.delete(id);
+        this.humanEdits.delete(id);
+        freed.add(el.fileId);
+      }
     }
+    for (const el of this.elements.values()) freed.delete(el.fileId);
+    for (const id of freed) if (typeof id === "string") delete this.files[id];
   }
 };
 
@@ -6216,6 +6235,7 @@ var Workspace = class _Workspace {
   // "<diagramId> <role>" → the last revision that role has read.
   cursors = {};
   savingCursors = Promise.resolve();
+  savingIndex = Promise.resolve();
   static async load(opts) {
     const ws = new _Workspace(opts);
     try {
@@ -6244,6 +6264,7 @@ var Workspace = class _Workspace {
     if (!name) throw new WorkspaceError("name is required");
     if (!owner) throw new WorkspaceError("owner is required");
     if (!DIAGRAM_KINDS.includes(input.kind)) throw new WorkspaceError(`unknown kind: ${input.kind}`);
+    if (input.refines && !this.get(input.refines.split("#")[0])) throw new WorkspaceError(`unknown diagram in refines: ${input.refines}`);
     let id;
     do
       id = "d_" + [...randomBytes(6)].map((b) => (b % 36).toString(36)).join("");
@@ -6286,7 +6307,10 @@ var Workspace = class _Workspace {
     this.stores.delete(id);
     await this.unwatch.get(id)?.();
     this.unwatch.delete(id);
-    if (store) await store.then((s) => s.idle(), () => {
+    if (store) await store.then((s) => {
+      s.close();
+      return s.idle();
+    }, () => {
     });
     const logs = [join5(this.dir, `${entry.file}.log.jsonl`)];
     if (this.opts.logDir) logs.push(join5(this.opts.logDir, `${entry.file}.log.jsonl`));
@@ -6389,8 +6413,12 @@ var Workspace = class _Workspace {
     if (!entry) throw new WorkspaceError(`unknown diagram: ${id}`);
     return entry;
   }
+  // Queued like saveCursors, so an older list never lands after a newer one.
   saveIndex() {
-    return writeAtomic(join5(this.dir, INDEX), JSON.stringify(this.entries, null, 2) + "\n");
+    const run = this.savingIndex.then(() => writeAtomic(join5(this.dir, INDEX), JSON.stringify(this.entries, null, 2) + "\n"));
+    this.savingIndex = run.catch(() => {
+    });
+    return run;
   }
 };
 
@@ -7380,7 +7408,8 @@ async function startServer(opts) {
       return;
     }
     const file = join6(opts.staticDir, normalize2(pathname));
-    for (const candidate of [file, join6(opts.staticDir, "index.html")]) {
+    const candidates = extname2(pathname) ? [file] : [file, join6(opts.staticDir, "index.html")];
+    for (const candidate of candidates) {
       try {
         const body = await readFile5(candidate);
         res.writeHead(200, { "content-type": MIME[extname2(candidate)] ?? "application/octet-stream" }).end(body);

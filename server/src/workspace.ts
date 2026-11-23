@@ -79,6 +79,7 @@ export class Workspace {
   // "<diagramId> <role>" → the last revision that role has read.
   private cursors: Record<string, number> = {};
   private savingCursors: Promise<void> = Promise.resolve();
+  private savingIndex: Promise<void> = Promise.resolve();
 
   private constructor(private opts: WorkspaceOptions) {
     this.dir = opts.dir;
@@ -115,6 +116,7 @@ export class Workspace {
     if (!name) throw new WorkspaceError('name is required');
     if (!owner) throw new WorkspaceError('owner is required');
     if (!DIAGRAM_KINDS.includes(input.kind)) throw new WorkspaceError(`unknown kind: ${input.kind}`);
+    if (input.refines && !this.get(input.refines.split('#')[0])) throw new WorkspaceError(`unknown diagram in refines: ${input.refines}`);
 
     let id: string;
     do id = 'd_' + [...randomBytes(6)].map((b) => (b % 36).toString(36)).join('');
@@ -165,8 +167,8 @@ export class Workspace {
     this.stores.delete(id);
     await this.unwatch.get(id)?.();
     this.unwatch.delete(id);
-    // Let a pending save finish first, or it would write the file back.
-    if (store) await store.then((s) => s.idle(), () => {});
+    // Stop late changes, and let a save in flight finish, or either would write the file back.
+    if (store) await store.then((s) => { s.close(); return s.idle(); }, () => {});
     const logs = [join(this.dir, `${entry.file}.log.jsonl`)];
     if (this.opts.logDir) logs.push(join(this.opts.logDir, `${entry.file}.log.jsonl`));
     await Promise.all([join(this.dir, entry.file), ...logs].map((f) => rm(f, { force: true })));
@@ -284,7 +286,10 @@ export class Workspace {
     return entry;
   }
 
+  // Queued like saveCursors, so an older list never lands after a newer one.
   private saveIndex(): Promise<void> {
-    return writeAtomic(join(this.dir, INDEX), JSON.stringify(this.entries, null, 2) + '\n');
+    const run = this.savingIndex.then(() => writeAtomic(join(this.dir, INDEX), JSON.stringify(this.entries, null, 2) + '\n'));
+    this.savingIndex = run.catch(() => {});
+    return run;
   }
 }
