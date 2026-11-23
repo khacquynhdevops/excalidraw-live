@@ -37398,7 +37398,9 @@ function createBoardServer(opts) {
     kind: external_exports.enum(DIAGRAM_KINDS).optional(),
     audience: external_exports.string().optional().describe("only diagrams this role owns or reads")
   }, async ({ kind, audience }) => {
-    const rows = (await index()).filter((e) => (!kind || e.kind === kind) && (!audience || e.owner === audience || e.audience.includes(audience)));
+    const live = await findServer(opts.projectDir);
+    const all = live ? await request(live.url, "GET", "/api/diagrams") : await index();
+    const rows = all.filter((e) => (!kind || e.kind === kind) && (!audience || e.owner === audience || e.audience.includes(audience)));
     if (!rows.length) return "no diagrams";
     return (await Promise.all(rows.map(async (e) => {
       const updated = await stat2(join3(dir, e.file)).then((s) => s.mtime.toISOString().slice(0, 16), () => "-");

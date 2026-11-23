@@ -186,7 +186,10 @@ export function createBoardServer(opts: BoardServerOptions) {
     kind: z.enum(DIAGRAM_KINDS).optional(),
     audience: z.string().optional().describe('only diagrams this role owns or reads')
   }, async ({ kind, audience }) => {
-    const rows = (await index()).filter((e) => (!kind || e.kind === kind) && (!audience || e.owner === audience || e.audience.includes(audience)));
+    // A running server also lists .excalidraw files dropped into the folder.
+    const live = await findServer(opts.projectDir);
+    const all: DiagramEntry[] = live ? await request(live.url, 'GET', '/api/diagrams') : await index();
+    const rows = all.filter((e) => (!kind || e.kind === kind) && (!audience || e.owner === audience || e.audience.includes(audience)));
     if (!rows.length) return 'no diagrams';
     return (await Promise.all(rows.map(async (e) => {
       const updated = await stat(join(dir, e.file)).then((s) => s.mtime.toISOString().slice(0, 16), () => '-');

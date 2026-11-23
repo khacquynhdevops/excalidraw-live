@@ -96,6 +96,30 @@ describe('Workspace', () => {
     expect(existsSync(join(dir, `${d.file}.log.jsonl`))).toBe(false);
   });
 
+  it('lists a .excalidraw file dropped into the folder, guessing name and kind from the file name', async () => {
+    const ws = await Workspace.load({ dir });
+    const d = await ws.create({ name: 'Known', kind: 'flow', owner: 'po' });
+    writeFileSync(join(dir, 'e-commerce-checkout-sequence.excalidraw'), '{"elements":[]}');
+    writeFileSync(join(dir, 'notes.excalidraw'), '{"elements":[]}');
+    await ws.sync();
+    expect(ws.list().map((e) => [e.file, e.name, e.kind, e.owner])).toEqual([
+      [d.file, 'Known', 'flow', 'po'],
+      ['e-commerce-checkout-sequence.excalidraw', 'E commerce checkout sequence', 'sequence', 'dev'],
+      ['notes.excalidraw', 'Notes', 'free', 'dev']
+    ]);
+    // Kept in the index: the id stays the same after a restart.
+    const again = await Workspace.load({ dir });
+    expect(again.list()).toEqual(ws.list());
+  });
+
+  it('does not list a diagram again while it is being deleted', async () => {
+    const ws = await Workspace.load({ dir });
+    const d = await ws.create({ name: 'Gone', kind: 'free', owner: 'dev' });
+    await Promise.all([ws.remove(d.id), ws.sync()]);
+    await ws.sync();
+    expect(ws.list()).toEqual([]);
+  });
+
   it('refuses refines that points at an unknown diagram', async () => {
     const ws = await Workspace.load({ dir });
     await expect(ws.create({ name: 'X', kind: 'free', owner: 'po', refines: 'd_nope00#x' })).rejects.toThrow(/refines/);

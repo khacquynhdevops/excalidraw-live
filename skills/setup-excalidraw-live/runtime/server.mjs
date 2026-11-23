@@ -3750,7 +3750,7 @@ var diagramsDir = (projectDir2) => join(projectDir2, "docs", "diagrams");
 
 // server/src/workspace.ts
 import { randomBytes } from "node:crypto";
-import { mkdir as mkdir2, readFile as readFile4, rename as rename2, rm, stat as stat4 } from "node:fs/promises";
+import { mkdir as mkdir2, readdir as readdir3, readFile as readFile4, rename as rename2, rm, stat as stat4 } from "node:fs/promises";
 import { join as join5 } from "node:path";
 
 // shared/dist/types.js
@@ -6217,6 +6217,12 @@ function sessionAlive(sessionId) {
 function slug(name) {
   return name.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "diagram";
 }
+function guessEntry(file) {
+  const stem = file.slice(0, -".excalidraw".length);
+  const words = stem.replace(/[-_\s]+/g, " ").trim() || "Diagram";
+  const kind = [...DIAGRAM_KINDS].sort((a, b) => b.length - a.length).find((k) => `-${stem.toLowerCase()}-`.includes(`-${k}-`)) ?? "free";
+  return { name: words[0].toUpperCase() + words.slice(1), file, kind, owner: "dev", audience: [] };
+}
 var Workspace = class _Workspace {
   constructor(opts) {
     this.opts = opts;
@@ -6236,6 +6242,8 @@ var Workspace = class _Workspace {
   cursors = {};
   savingCursors = Promise.resolve();
   savingIndex = Promise.resolve();
+  // Files of diagrams being deleted, so sync() does not list them again.
+  removing = /* @__PURE__ */ new Set();
   static async load(opts) {
     const ws = new _Workspace(opts);
     try {
@@ -6250,7 +6258,24 @@ var Workspace = class _Workspace {
         if (err.code !== "ENOENT") throw err;
       }
     }
+    await ws.sync();
     return ws;
+  }
+  // Lists any .excalidraw file in the folder that the index does not know,
+  // e.g. one copied in or restored from git.
+  async sync() {
+    let files;
+    try {
+      files = await readdir3(this.dir);
+    } catch (err) {
+      if (err.code === "ENOENT") return;
+      throw err;
+    }
+    const known = new Set(this.entries.map((d) => d.file));
+    const added = files.sort().filter((f) => f.endsWith(".excalidraw") && !f.startsWith(".") && !known.has(f) && !this.removing.has(f)).map((f) => ({ id: this.newId(), ...guessEntry(f) }));
+    if (!added.length) return;
+    this.entries = [...this.entries, ...added];
+    await this.saveIndex();
   }
   list() {
     return this.entries;
@@ -6265,10 +6290,7 @@ var Workspace = class _Workspace {
     if (!owner) throw new WorkspaceError("owner is required");
     if (!DIAGRAM_KINDS.includes(input.kind)) throw new WorkspaceError(`unknown kind: ${input.kind}`);
     if (input.refines && !this.get(input.refines.split("#")[0])) throw new WorkspaceError(`unknown diagram in refines: ${input.refines}`);
-    let id;
-    do
-      id = "d_" + [...randomBytes(6)].map((b) => (b % 36).toString(36)).join("");
-    while (this.get(id));
+    const id = this.newId();
     const taken = new Set(this.entries.map((d) => d.file));
     const stem = slug(name);
     let file = `${stem}.excalidraw`;
@@ -6298,23 +6320,28 @@ var Workspace = class _Workspace {
   async remove(id) {
     const entry = this.require(id);
     this.entries = this.entries.filter((d) => d.id !== id);
-    await this.saveIndex();
-    for (const [sessionId, b] of this.sessions) if (b.diagramId === id) this.sessions.delete(sessionId);
-    this.leases.delete(id);
-    this.cursors = Object.fromEntries(Object.entries(this.cursors).filter(([k]) => !k.startsWith(`${id} `)));
-    await this.saveCursors();
-    const store = this.stores.get(id);
-    this.stores.delete(id);
-    await this.unwatch.get(id)?.();
-    this.unwatch.delete(id);
-    if (store) await store.then((s) => {
-      s.close();
-      return s.idle();
-    }, () => {
-    });
-    const logs = [join5(this.dir, `${entry.file}.log.jsonl`)];
-    if (this.opts.logDir) logs.push(join5(this.opts.logDir, `${entry.file}.log.jsonl`));
-    await Promise.all([join5(this.dir, entry.file), ...logs].map((f) => rm(f, { force: true })));
+    this.removing.add(entry.file);
+    try {
+      await this.saveIndex();
+      for (const [sessionId, b] of this.sessions) if (b.diagramId === id) this.sessions.delete(sessionId);
+      this.leases.delete(id);
+      this.cursors = Object.fromEntries(Object.entries(this.cursors).filter(([k]) => !k.startsWith(`${id} `)));
+      await this.saveCursors();
+      const store = this.stores.get(id);
+      this.stores.delete(id);
+      await this.unwatch.get(id)?.();
+      this.unwatch.delete(id);
+      if (store) await store.then((s) => {
+        s.close();
+        return s.idle();
+      }, () => {
+      });
+      const logs = [join5(this.dir, `${entry.file}.log.jsonl`)];
+      if (this.opts.logDir) logs.push(join5(this.opts.logDir, `${entry.file}.log.jsonl`));
+      await Promise.all([join5(this.dir, entry.file), ...logs].map((f) => rm(f, { force: true })));
+    } finally {
+      this.removing.delete(entry.file);
+    }
   }
   // Opened on first use and kept for the life of the workspace. From then on
   // its file is watched for outside edits.
@@ -6407,6 +6434,13 @@ var Workspace = class _Workspace {
     await Promise.all([...this.unwatch.values()].map((stop) => stop()));
     this.unwatch.clear();
     await Promise.all([...this.stores.values()].map(async (s) => (await s).flush()));
+  }
+  newId() {
+    let id;
+    do
+      id = "d_" + [...randomBytes(6)].map((b) => (b % 36).toString(36)).join("");
+    while (this.get(id));
+    return id;
   }
   require(id) {
     const entry = this.get(id);
@@ -7440,7 +7474,7 @@ async function api(workspace2, room, req, res) {
     const m = /^\/api\/diagrams(?:\/([^/]+))?$/.exec(url.pathname);
     if (!m) return json(res, 404, { error: "not found" });
     const id = m[1] && decodeURIComponent(m[1]);
-    if (!id && req.method === "GET") return json(res, 200, workspace2.list());
+    if (!id && req.method === "GET") return json(res, 200, (await workspace2.sync(), workspace2.list()));
     if (!id && req.method === "POST") {
       const b = await readJson(req);
       const entry = await workspace2.create({

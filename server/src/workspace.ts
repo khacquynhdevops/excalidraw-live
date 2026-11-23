@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { mkdir, readFile, rename, rm, stat } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { DIAGRAM_KINDS, type DiagramEntry, type DiagramKind, type SceneEl } from '@excalidraw-live/shared';
 import { serializeScene, writeAtomic } from './file-io.js';
@@ -59,6 +59,17 @@ function slug(name: string): string {
     .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'diagram';
 }
 
+// For a file nobody listed: "e-commerce-checkout-sequence.excalidraw" is the
+// sequence diagram "E commerce checkout sequence". The longest kind wins, so
+// c4-container beats a plain match on a shorter kind.
+function guessEntry(file: string): Omit<DiagramEntry, 'id'> {
+  const stem = file.slice(0, -'.excalidraw'.length);
+  const words = stem.replace(/[-_\s]+/g, ' ').trim() || 'Diagram';
+  const kind = [...DIAGRAM_KINDS].sort((a, b) => b.length - a.length)
+    .find((k) => `-${stem.toLowerCase()}-`.includes(`-${k}-`)) ?? 'free';
+  return { name: words[0].toUpperCase() + words.slice(1), file, kind, owner: 'dev', audience: [] };
+}
+
 // A folder of diagrams: `diagrams.json` lists them, each has its own
 // `.excalidraw` file and, once opened, its own SceneStore.
 //
@@ -80,6 +91,8 @@ export class Workspace {
   private cursors: Record<string, number> = {};
   private savingCursors: Promise<void> = Promise.resolve();
   private savingIndex: Promise<void> = Promise.resolve();
+  // Files of diagrams being deleted, so sync() does not list them again.
+  private removing = new Set<string>();
 
   private constructor(private opts: WorkspaceOptions) {
     this.dir = opts.dir;
@@ -99,7 +112,27 @@ export class Workspace {
         if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
       }
     }
+    await ws.sync();
     return ws;
+  }
+
+  // Lists any .excalidraw file in the folder that the index does not know,
+  // e.g. one copied in or restored from git.
+  async sync(): Promise<void> {
+    let files: string[];
+    try {
+      files = await readdir(this.dir);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
+      throw err;
+    }
+    const known = new Set(this.entries.map((d) => d.file));
+    const added = files.sort()
+      .filter((f) => f.endsWith('.excalidraw') && !f.startsWith('.') && !known.has(f) && !this.removing.has(f))
+      .map((f) => ({ id: this.newId(), ...guessEntry(f) }));
+    if (!added.length) return;
+    this.entries = [...this.entries, ...added];
+    await this.saveIndex();
   }
 
   list(): DiagramEntry[] {
@@ -118,10 +151,7 @@ export class Workspace {
     if (!DIAGRAM_KINDS.includes(input.kind)) throw new WorkspaceError(`unknown kind: ${input.kind}`);
     if (input.refines && !this.get(input.refines.split('#')[0])) throw new WorkspaceError(`unknown diagram in refines: ${input.refines}`);
 
-    let id: string;
-    do id = 'd_' + [...randomBytes(6)].map((b) => (b % 36).toString(36)).join('');
-    while (this.get(id));
-
+    const id = this.newId();
     const taken = new Set(this.entries.map((d) => d.file));
     const stem = slug(name);
     let file = `${stem}.excalidraw`;
@@ -158,20 +188,25 @@ export class Workspace {
     const entry = this.require(id);
     // Unlisted before the first await, so no new session or store opens it.
     this.entries = this.entries.filter((d) => d.id !== id);
-    await this.saveIndex();
-    for (const [sessionId, b] of this.sessions) if (b.diagramId === id) this.sessions.delete(sessionId);
-    this.leases.delete(id);
-    this.cursors = Object.fromEntries(Object.entries(this.cursors).filter(([k]) => !k.startsWith(`${id} `)));
-    await this.saveCursors();
-    const store = this.stores.get(id);
-    this.stores.delete(id);
-    await this.unwatch.get(id)?.();
-    this.unwatch.delete(id);
-    // Stop late changes, and let a save in flight finish, or either would write the file back.
-    if (store) await store.then((s) => { s.close(); return s.idle(); }, () => {});
-    const logs = [join(this.dir, `${entry.file}.log.jsonl`)];
-    if (this.opts.logDir) logs.push(join(this.opts.logDir, `${entry.file}.log.jsonl`));
-    await Promise.all([join(this.dir, entry.file), ...logs].map((f) => rm(f, { force: true })));
+    this.removing.add(entry.file);
+    try {
+      await this.saveIndex();
+      for (const [sessionId, b] of this.sessions) if (b.diagramId === id) this.sessions.delete(sessionId);
+      this.leases.delete(id);
+      this.cursors = Object.fromEntries(Object.entries(this.cursors).filter(([k]) => !k.startsWith(`${id} `)));
+      await this.saveCursors();
+      const store = this.stores.get(id);
+      this.stores.delete(id);
+      await this.unwatch.get(id)?.();
+      this.unwatch.delete(id);
+      // Stop late changes, and let a save in flight finish, or either would write the file back.
+      if (store) await store.then((s) => { s.close(); return s.idle(); }, () => {});
+      const logs = [join(this.dir, `${entry.file}.log.jsonl`)];
+      if (this.opts.logDir) logs.push(join(this.opts.logDir, `${entry.file}.log.jsonl`));
+      await Promise.all([join(this.dir, entry.file), ...logs].map((f) => rm(f, { force: true })));
+    } finally {
+      this.removing.delete(entry.file);
+    }
   }
 
   // Opened on first use and kept for the life of the workspace. From then on
@@ -278,6 +313,13 @@ export class Workspace {
     await Promise.all([...this.unwatch.values()].map((stop) => stop()));
     this.unwatch.clear();
     await Promise.all([...this.stores.values()].map(async (s) => (await s).flush()));
+  }
+
+  private newId(): string {
+    let id: string;
+    do id = 'd_' + [...randomBytes(6)].map((b) => (b % 36).toString(36)).join('');
+    while (this.get(id));
+    return id;
   }
 
   private require(id: string): DiagramEntry {

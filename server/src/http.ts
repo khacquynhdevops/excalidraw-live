@@ -102,7 +102,7 @@ async function api(workspace: Workspace, room: SyncRooms, req: IncomingMessage, 
     const m = /^\/api\/diagrams(?:\/([^/]+))?$/.exec(url.pathname);
     if (!m) return json(res, 404, { error: 'not found' });
     const id = m[1] && decodeURIComponent(m[1]);
-    if (!id && req.method === 'GET') return json(res, 200, workspace.list());
+    if (!id && req.method === 'GET') return json(res, 200, (await workspace.sync(), workspace.list()));
     if (!id && req.method === 'POST') {
       const b = await readJson(req);
       const entry = await workspace.create({
