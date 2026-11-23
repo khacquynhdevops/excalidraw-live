@@ -48,6 +48,8 @@ export interface SyncRooms {
   presence(diagramId: string): Map<string, Presence> | undefined;
   // Send to every client viewing the diagram.
   broadcast(diagramId: string, msg: ServerMsg): void;
+  // Disconnect everyone viewing a diagram that was deleted.
+  drop(diagramId: string): void;
   close(): void;
 }
 
@@ -99,6 +101,13 @@ export function attachSync(http: Server, workspace: Workspace): SyncRooms {
   return {
     presence: (id) => rooms.get(id)?.presence,
     broadcast,
+    drop(id) {
+      const r = rooms.get(id);
+      if (!r) return;
+      rooms.delete(id);
+      for (const ws of r.wss.clients) ws.close(4404, 'diagram deleted');
+      r.wss.close();
+    },
     close() {
       for (const { wss } of rooms.values()) {
         for (const ws of wss.clients) ws.terminate();

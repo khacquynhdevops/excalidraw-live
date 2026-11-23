@@ -246,5 +246,14 @@ describe('diagrams API', () => {
     const res = await api('/api/diagrams', { method: 'POST', headers: { origin: 'https://evil.example' }, body: JSON.stringify({ name: 'x', kind: 'free', owner: 'po' }) });
     expect(res.status).toBe(403);
     expect(workspace.list()).toHaveLength(1);
+    const del = await api(`/api/diagrams/${diagram.id}`, { method: 'DELETE', headers: { origin: 'https://evil.example' } });
+    expect(del.status).toBe(403);
+    expect(workspace.list()).toHaveLength(1);
+  });
+
+  it('deletes a diagram', async () => {
+    expect((await api(`/api/diagrams/${diagram.id}`, { method: 'DELETE' })).status).toBe(204);
+    expect((await api(`/api/diagrams/${diagram.id}`)).status).toBe(404);
+    expect((await api(`/api/diagrams/${diagram.id}`, { method: 'DELETE' })).status).toBe(404);
   });
 });

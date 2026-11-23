@@ -89,6 +89,7 @@ export async function startServer(opts: ServerOptions): Promise<CanvasServer> {
 //   POST  /api/diagrams        create {name, kind, owner, audience?, refines?}
 //   GET   /api/diagrams/:id    one entry
 //   PATCH /api/diagrams/:id    rename {name}
+//   DELETE /api/diagrams/:id   delete, with its drawing and change log
 async function api(workspace: Workspace, room: SyncRooms, req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url ?? '/', 'http://x');
   // Same guard as the socket: other web pages must not change diagrams.
@@ -116,6 +117,12 @@ async function api(workspace: Workspace, room: SyncRooms, req: IncomingMessage, 
     if (id && req.method === 'PATCH') {
       const b = await readJson(req);
       return json(res, 200, await workspace.rename(id, String(b.name ?? '')));
+    }
+    if (id && req.method === 'DELETE') {
+      await workspace.remove(id);
+      room.drop(id);
+      res.writeHead(204).end();
+      return;
     }
     json(res, 405, { error: 'method not allowed' });
   } catch (err) {

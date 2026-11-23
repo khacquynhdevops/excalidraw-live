@@ -3750,7 +3750,7 @@ var diagramsDir = (projectDir2) => join(projectDir2, "docs", "diagrams");
 
 // server/src/workspace.ts
 import { randomBytes } from "node:crypto";
-import { mkdir as mkdir2, readFile as readFile4, rename as rename2, stat as stat4 } from "node:fs/promises";
+import { mkdir as mkdir2, readFile as readFile4, rename as rename2, rm, stat as stat4 } from "node:fs/promises";
 import { join as join5 } from "node:path";
 
 // shared/dist/types.js
@@ -6210,7 +6210,8 @@ var Workspace = class _Workspace {
   sessions = /* @__PURE__ */ new Map();
   leases = /* @__PURE__ */ new Map();
   // diagramId → sessionId
-  unwatch = [];
+  unwatch = /* @__PURE__ */ new Map();
+  // diagramId → stop watching
   fileListeners = /* @__PURE__ */ new Set();
   // "<diagramId> <role>" → the last revision that role has read.
   cursors = {};
@@ -6271,6 +6272,26 @@ var Workspace = class _Workspace {
     await this.saveIndex();
     return renamed;
   }
+  // Removes the diagram for good: its index entry, its sessions and leases,
+  // its read cursors, its drawing and its change log.
+  async remove(id) {
+    const entry = this.require(id);
+    this.entries = this.entries.filter((d) => d.id !== id);
+    await this.saveIndex();
+    for (const [sessionId, b] of this.sessions) if (b.diagramId === id) this.sessions.delete(sessionId);
+    this.leases.delete(id);
+    this.cursors = Object.fromEntries(Object.entries(this.cursors).filter(([k]) => !k.startsWith(`${id} `)));
+    await this.saveCursors();
+    const store = this.stores.get(id);
+    this.stores.delete(id);
+    await this.unwatch.get(id)?.();
+    this.unwatch.delete(id);
+    if (store) await store.then((s) => s.idle(), () => {
+    });
+    const logs = [join5(this.dir, `${entry.file}.log.jsonl`)];
+    if (this.opts.logDir) logs.push(join5(this.opts.logDir, `${entry.file}.log.jsonl`));
+    await Promise.all([join5(this.dir, entry.file), ...logs].map((f) => rm(f, { force: true })));
+  }
   // Opened on first use and kept for the life of the workspace. From then on
   // its file is watched for outside edits.
   store(id) {
@@ -6279,7 +6300,7 @@ var Workspace = class _Workspace {
       const entry = this.get(id);
       if (!entry) return Promise.reject(new WorkspaceError(`unknown diagram: ${id}`));
       s = this.logPath(entry.file).then((logPath) => SceneStore.load({ path: join5(this.dir, entry.file), logPath, debounceMs: this.opts.debounceMs, now: this.opts.now })).then((store) => {
-        this.unwatch.push(watchStore(store, (els, files) => {
+        this.unwatch.set(id, watchStore(store, (els, files) => {
           for (const fn of this.fileListeners) fn(id, store.revision, els, files);
         }));
         return store;
@@ -6350,13 +6371,17 @@ var Workspace = class _Workspace {
   // Saves are queued so two quick reads cannot race on the same file.
   setCursor(diagramId, role2, rev) {
     this.cursors = { ...this.cursors, [`${diagramId} ${role2}`]: rev };
+    return this.saveCursors();
+  }
+  saveCursors() {
     const path = this.opts.cursorsPath;
     if (!path) return Promise.resolve();
     this.savingCursors = this.savingCursors.then(() => writeAtomic(path, JSON.stringify(this.cursors, null, 2) + "\n")).catch((err) => console.error(`saving read cursors failed: ${err.message}`));
     return this.savingCursors;
   }
   async close() {
-    await Promise.all(this.unwatch.splice(0).map((stop) => stop()));
+    await Promise.all([...this.unwatch.values()].map((stop) => stop()));
+    this.unwatch.clear();
     await Promise.all([...this.stores.values()].map(async (s) => (await s).flush()));
   }
   require(id) {
@@ -6464,6 +6489,13 @@ function attachSync(http, workspace2) {
   return {
     presence: (id) => rooms.get(id)?.presence,
     broadcast,
+    drop(id) {
+      const r = rooms.get(id);
+      if (!r) return;
+      rooms.delete(id);
+      for (const ws of r.wss.clients) ws.close(4404, "diagram deleted");
+      r.wss.close();
+    },
     close() {
       for (const { wss } of rooms.values()) {
         for (const ws of wss.clients) ws.terminate();
@@ -7396,6 +7428,12 @@ async function api(workspace2, room, req, res) {
     if (id && req.method === "PATCH") {
       const b = await readJson(req);
       return json(res, 200, await workspace2.rename(id, String(b.name ?? "")));
+    }
+    if (id && req.method === "DELETE") {
+      await workspace2.remove(id);
+      room.drop(id);
+      res.writeHead(204).end();
+      return;
     }
     json(res, 405, { error: "method not allowed" });
   } catch (err) {

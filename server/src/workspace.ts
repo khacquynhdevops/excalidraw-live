@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { mkdir, readFile, rename, stat } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { DIAGRAM_KINDS, type DiagramEntry, type DiagramKind, type SceneEl } from '@excalidraw-live/shared';
 import { serializeScene, writeAtomic } from './file-io.js';
@@ -74,7 +74,7 @@ export class Workspace {
   private stores = new Map<string, Promise<SceneStore>>();
   private sessions = new Map<string, Binding & { as: string; active: number }>();
   private leases = new Map<string, string>(); // diagramId → sessionId
-  private unwatch: (() => Promise<void>)[] = [];
+  private unwatch = new Map<string, () => Promise<void>>(); // diagramId → stop watching
   private fileListeners = new Set<FileChangeListener>();
   // "<diagramId> <role>" → the last revision that role has read.
   private cursors: Record<string, number> = {};
@@ -150,6 +150,28 @@ export class Workspace {
     return renamed;
   }
 
+  // Removes the diagram for good: its index entry, its sessions and leases,
+  // its read cursors, its drawing and its change log.
+  async remove(id: string): Promise<void> {
+    const entry = this.require(id);
+    // Unlisted before the first await, so no new session or store opens it.
+    this.entries = this.entries.filter((d) => d.id !== id);
+    await this.saveIndex();
+    for (const [sessionId, b] of this.sessions) if (b.diagramId === id) this.sessions.delete(sessionId);
+    this.leases.delete(id);
+    this.cursors = Object.fromEntries(Object.entries(this.cursors).filter(([k]) => !k.startsWith(`${id} `)));
+    await this.saveCursors();
+    const store = this.stores.get(id);
+    this.stores.delete(id);
+    await this.unwatch.get(id)?.();
+    this.unwatch.delete(id);
+    // Let a pending save finish first, or it would write the file back.
+    if (store) await store.then((s) => s.idle(), () => {});
+    const logs = [join(this.dir, `${entry.file}.log.jsonl`)];
+    if (this.opts.logDir) logs.push(join(this.opts.logDir, `${entry.file}.log.jsonl`));
+    await Promise.all([join(this.dir, entry.file), ...logs].map((f) => rm(f, { force: true })));
+  }
+
   // Opened on first use and kept for the life of the workspace. From then on
   // its file is watched for outside edits.
   store(id: string): Promise<SceneStore> {
@@ -160,7 +182,7 @@ export class Workspace {
       s = this.logPath(entry.file)
         .then((logPath) => SceneStore.load({ path: join(this.dir, entry.file), logPath, debounceMs: this.opts.debounceMs, now: this.opts.now }))
         .then((store) => {
-          this.unwatch.push(watchStore(store, (els, files) => {
+          this.unwatch.set(id, watchStore(store, (els, files) => {
             for (const fn of this.fileListeners) fn(id, store.revision, els, files);
           }));
           return store;
@@ -238,6 +260,10 @@ export class Workspace {
   // Saves are queued so two quick reads cannot race on the same file.
   setCursor(diagramId: string, role: string, rev: number): Promise<void> {
     this.cursors = { ...this.cursors, [`${diagramId} ${role}`]: rev };
+    return this.saveCursors();
+  }
+
+  private saveCursors(): Promise<void> {
     const path = this.opts.cursorsPath;
     if (!path) return Promise.resolve();
     this.savingCursors = this.savingCursors
@@ -247,7 +273,8 @@ export class Workspace {
   }
 
   async close(): Promise<void> {
-    await Promise.all(this.unwatch.splice(0).map((stop) => stop()));
+    await Promise.all([...this.unwatch.values()].map((stop) => stop()));
+    this.unwatch.clear();
     await Promise.all([...this.stores.values()].map(async (s) => (await s).flush()));
   }
 

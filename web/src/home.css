@@ -1,0 +1,103 @@
+/* Home page (diagram list). Scoped under .home so the board page is untouched. */
+:root { color-scheme: light dark; }
+
+.home {
+  --bg: #f7f7f8; --surface: #fff; --text: #1d1d1f; --muted: #5f6368;
+  --border: #e2e2e6; --brand: #4f46e5; --brand-text: #fff;
+  --danger: #c5221f; --danger-bg: #fce8e6; --ok: #188038; --chip: #eef0f4;
+  --po: #b45309; --dev: #1d4ed8; --tester: #047857; --devops: #7c3aed; --security: #be123c;
+  min-height: 100%; background: var(--bg); color: var(--text); font-family: system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  .home {
+    --bg: #121214; --surface: #1c1c1f; --text: #ececf1; --muted: #a1a1aa;
+    --border: #2e2e33; --brand: #818cf8; --brand-text: #111;
+    --danger: #f28b82; --danger-bg: #3b1d1b; --ok: #81c995; --chip: #2a2a2f;
+    --po: #fbbf24; --dev: #93c5fd; --tester: #6ee7b7; --devops: #c4b5fd; --security: #fda4af;
+  }
+}
+.home * { box-sizing: border-box; }
+.home main { max-width: 1040px; margin: 0 auto; padding: 32px 16px; }
+
+.home header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+.home header h1 { margin: 0; font-size: 1.6rem; }
+.home .count { color: var(--muted); }
+.home .spacer { flex: 1; }
+.home .page-error { color: var(--danger); }
+
+.home button { font: inherit; cursor: pointer; border-radius: 8px; padding: 6px 12px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+.home button:hover { border-color: var(--muted); }
+.home button:disabled { opacity: .6; cursor: progress; }
+.home button.primary { background: var(--brand); color: var(--brand-text); border-color: transparent; }
+.home button.danger { background: var(--danger); color: var(--bg); border-color: transparent; }
+.home button.ghost-danger { color: var(--danger); }
+
+/* responsive-table: the wrapper scrolls and is the query container */
+.home .table-wrapper { overflow: auto; container-type: inline-size; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 12px; }
+.home table { width: 100%; border-collapse: separate; border-spacing: 0; }
+.home caption { text-align: start; padding: 12px 16px; color: var(--muted); }
+.home th, .home td { padding: 10px 16px; text-align: start; vertical-align: middle; border-top: 1px solid var(--border); }
+.home thead th { position: sticky; inset-block-start: 0; z-index: 1; background: var(--surface);
+  font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.home tbody th { font-weight: 600; }
+.home tbody th a { color: inherit; text-decoration: none; }
+.home tbody th a:hover { color: var(--brand); text-decoration: underline; }
+.home tbody tr:hover { background: var(--chip); }
+.home code { font-size: .8rem; color: var(--muted); }
+.home .actions { white-space: nowrap; text-align: end; }
+.home .actions button { padding: 4px 10px; font-size: .85rem; }
+.home .actions button + button { margin-inline-start: 6px; }
+
+.home .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: .8rem;
+  background: var(--chip); white-space: nowrap; }
+.home .role { font-weight: 600; }
+.home .role[data-role=po] { color: var(--po); }
+.home .role:is([data-role=dev], [data-role=swe]) { color: var(--dev); }
+.home .role[data-role=tester] { color: var(--tester); }
+.home .role[data-role=devops] { color: var(--devops); }
+.home .role[data-role=security] { color: var(--security); }
+.home .chips { display: flex; gap: 4px; flex-wrap: wrap; }
+
+/* Stacked cards when the table's own box is narrow */
+@container (width < 640px) {
+  .home :is(table, thead, tbody, tr, th, td) { display: block; }
+  .home thead { display: none; }
+  .home tbody tr { border-top: 1px solid var(--border); padding: 8px 0; }
+  .home :is(th, td) { border: 0; padding: 4px 16px; }
+  .home td:nth-child(2)::before { content: "Kind: "; color: var(--muted); }
+  .home td:nth-child(3)::before { content: "Owner: "; color: var(--muted); }
+  .home td:nth-child(4)::before { content: "Audience: "; color: var(--muted); }
+  .home td:nth-child(5)::before { content: "Id: "; color: var(--muted); }
+  .home td:nth-child(4) { display: flex; gap: 4px; flex-wrap: wrap; }
+  .home .actions { text-align: start; }
+}
+
+.home .empty { text-align: center; padding: 48px 16px; background: var(--surface);
+  border: 1px dashed var(--border); border-radius: 12px; }
+.home .empty p { color: var(--muted); }
+
+/* dialog */
+.home dialog { border: 1px solid var(--border); border-radius: 12px; padding: 20px;
+  width: min(440px, calc(100vw - 32px)); background: var(--surface); color: var(--text); }
+.home dialog::backdrop { background: rgb(0 0 0 / .45); overflow: hidden; overscroll-behavior: contain; }
+.home dialog:modal { overscroll-behavior: contain; }
+.home dialog h2 { margin: 0 0 12px; font-size: 1.15rem; }
+.home dialog .row { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.home .warn { color: var(--muted); font-size: .9rem; }
+
+/* forms: validate-input-after-interaction */
+.home .field { display: grid; gap: 4px; margin-bottom: 12px; }
+.home .field label { font-weight: 600; font-size: .9rem; }
+.home .hint { color: var(--muted); font-size: .8rem; }
+.home :is(input, select) { font: inherit; padding: 7px 10px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--bg); color: var(--text); }
+.home :is(input, select):user-invalid { border-color: var(--danger); background: var(--danger-bg); }
+.home :is(input, select):user-valid { border-color: var(--ok); }
+.home .error-msg { display: none; color: var(--danger); font-size: .85rem; }
+.home :is(input, select):user-invalid + .error-msg { display: block; }
+.home .form-error { color: var(--danger); font-size: .9rem; margin: 0; }
+
+.home .visually-hidden { position: absolute; clip-path: inset(50%); overflow: hidden;
+  width: 1px; height: 1px; white-space: nowrap; }

@@ -54,6 +54,23 @@ describe('Workspace', () => {
     await ws.close();
   });
 
+  it('deletes a diagram: index entry, drawing and change log', async () => {
+    const ws = await Workspace.load({ dir });
+    const keep = await ws.create({ name: 'Keep', kind: 'free', owner: 'po' });
+    const d = await ws.create({ name: 'Gone', kind: 'free', owner: 'po' });
+    writeFileSync(join(dir, `${d.file}.log.jsonl`), '{}\n');
+    await ws.store(d.id);
+    await ws.remove(d.id);
+    expect(ws.list()).toEqual([keep]);
+    expect(index()).toEqual([keep]);
+    expect(existsSync(join(dir, d.file))).toBe(false);
+    expect(existsSync(join(dir, `${d.file}.log.jsonl`))).toBe(false);
+    expect(existsSync(join(dir, keep.file))).toBe(true);
+    await expect(ws.remove(d.id)).rejects.toThrow();
+    await ws.close();
+    expect((await Workspace.load({ dir })).list()).toEqual([keep]);
+  });
+
   it('refuses an unknown kind or a missing name/owner', async () => {
     const ws = await Workspace.load({ dir });
     await expect(ws.create({ name: 'x', kind: 'nope' as never, owner: 'po' })).rejects.toThrow(/kind/);

@@ -110,9 +110,11 @@ class Sync {
     const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/${encodeURIComponent(this.diagramId)}`);
     this.ws = ws;
     ws.onmessage = (e) => this.receive(JSON.parse(e.data));
-    ws.onclose = () => {
+    ws.onclose = (e) => {
       this.ws = null;
       if (this.stopped) return;
+      // The diagram was deleted: back to the list.
+      if (e.code === 4404) return void location.assign('/');
       this.setStatus('offline');
       setTimeout(() => this.connect(), 1000);
     };
